@@ -28,6 +28,7 @@
 #include "io/native_dialog.h"
 #include "io/paths.h"
 #include "io/png_export.h"
+#include "ml/model_metadata.h"
 #include "nlohmann/json.hpp"
 #include "ui/theme.h"
 #include "ui/ui.h"
@@ -842,14 +843,61 @@ void App::chooseModelFile() {
     config.modelFile = paths::toUtf8(*file);
     config.modelDir.clear();
     config.modelSelectionCleared = false;
+    modelInfoPath_.clear();
+    modelInfoAttempted_ = false;
     ui.statusOverride.clear();
     saveConfig();
+}
+
+void App::inspectModelInfo() {
+    const auto path = modelPath();
+    if (path.empty()) {
+        modelInfo_ = {};
+        modelInfoError_.clear();
+        modelInfoPath_.clear();
+        modelInfoAttempted_ = true;
+        return;
+    }
+    if (modelInfoAttempted_ && modelInfoPath_ == path) return;
+    modelInfoPath_ = path;
+    modelInfoAttempted_ = true;
+    modelInfo_ = {};
+    modelInfoError_.clear();
+
+    ml::OnnxRuntime runtime;
+    std::string error;
+    if (!runtime.load(paths::exeDir() / L"onnxruntime.dll", &error)) {
+        modelInfoError_ = error;
+        return;
+    }
+    ml::OnnxSession session;
+    if (!session.load(runtime, path, false, &error)) {
+        modelInfoError_ = error;
+        return;
+    }
+    modelInfo_ = session.info();
+    std::string weightError;
+    if (!inspectModelWeights(path, modelWeights_, &weightError)) {
+        modelWeights_ = {};
+    }
+}
+
+std::string App::modelType() const {
+    if (modelWeights_.fp16 > modelWeights_.fp32) return "fp16";
+    if (modelWeights_.fp32 > 0) return "fp32";
+    if (modelInfo_.inputType == "FLOAT16") return "fp16";
+    return "fp32";
 }
 
 void App::clearModelSelection() {
     config.modelFile.clear();
     config.modelDir.clear();
     config.modelSelectionCleared = true;
+    modelInfo_ = {};
+    modelWeights_ = {};
+    modelInfoPath_.clear();
+    modelInfoError_.clear();
+    modelInfoAttempted_ = false;
     ui.statusOverride.clear();
     saveConfig();
 }

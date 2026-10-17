@@ -23,6 +23,10 @@ ctest --test-dir build/mingw-release --output-on-failure
 
 无 OpenGL 4.5 环境时 GPU 测试会跳过。
 
+## FP16
+
+选择模型文件后，设置中的模型信息会显示模型类型（fp32 / fp16）。当前支持 FLOAT32、FLOAT16；FP16 输入/输出会自动转换，INT8/Q4 不支持。
+
 ## DirectML 基准
 
 ```text

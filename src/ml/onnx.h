@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -35,6 +36,13 @@ private:
     DmlAppendFn dmlAppend_ = nullptr;
 };
 
+struct ModelInfo {
+    std::string inputType;
+    std::vector<int64_t> inputShape;
+    std::string outputType;
+    std::vector<int64_t> outputShape;
+};
+
 class OnnxSession {
 public:
     OnnxSession() = default;
@@ -51,6 +59,8 @@ public:
              std::vector<float>& output, int& outputHeight, int& outputWidth,
              std::string* error);
 
+    const ModelInfo& info() const { return info_; }
+
 private:
     void release();
 
@@ -61,6 +71,8 @@ private:
     std::atomic<OrtRunOptions*> runOptions_{nullptr};
     std::string inputName_;
     std::string outputName_;
+    ModelInfo info_;
+    int inputType_ = 0;
 };
 
 } // namespace ml

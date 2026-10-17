@@ -1,4 +1,4 @@
-# ImRelighter 正式文档
+# ImRelighter 0.1.1 正式文档
 
 本目录是当前实现的使用与维护文档。
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(ImRelighter VERSION 0.1.0 LANGUAGES C CXX)
+project(ImRelighter VERSION 0.1.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -69,6 +69,7 @@ add_executable(ImRelighter WIN32
     src/gpu/shader.cpp
     src/gpu/renderer.cpp
     src/ml/onnx.cpp
+    src/ml/model_metadata.cpp
     src/ml/preprocess.cpp
     src/ml/stb_resize_impl.cpp
     src/ml/inference.cpp
@@ -94,7 +95,8 @@ target_link_libraries(ImRelighter PRIVATE
 
 target_compile_definitions(ImRelighter PRIVATE
     UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
-    _CRT_SECURE_NO_WARNINGS)
+    _CRT_SECURE_NO_WARNINGS
+    IMRELIGHTER_VERSION="${PROJECT_VERSION}")
 
 target_compile_options(ImRelighter PRIVATE
     -Wall -Wextra

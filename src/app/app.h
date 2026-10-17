@@ -15,6 +15,7 @@
 #include "core/types.h"
 #include "gpu/renderer.h"
 #include "ml/inference.h"
+#include "ml/model_metadata.h"
 #include "gpu/texture.h"
 
 struct GLFWwindow;
@@ -79,6 +80,10 @@ public:
     std::filesystem::path modelFolder() const;
     void chooseModelFile();
     void clearModelSelection();
+    void inspectModelInfo();
+    const ml::ModelInfo& modelInfo() const { return modelInfo_; }
+    const std::string& modelInfoError() const { return modelInfoError_; }
+    std::string modelType() const;
 
     std::string glVersion() const;
     std::string glRenderer() const;
@@ -130,6 +135,11 @@ private:
     std::unordered_map<uint64_t, std::unique_ptr<gpu::Texture>> thumbnails_;
     std::future<std::string> exportFuture_;
     double lastFrameTime_ = 0.0;
+    ml::ModelInfo modelInfo_;
+    ml::WeightInfo modelWeights_;
+    std::filesystem::path modelInfoPath_;
+    std::string modelInfoError_;
+    bool modelInfoAttempted_ = false;
     mutable bool dmlChecked_ = false;
     mutable bool dmlAvailable_ = false;
 };

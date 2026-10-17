@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <cstring>
+#include <limits>
 
 #ifndef _Frees_ptr_opt_
 #define _Frees_ptr_opt_
@@ -18,6 +19,121 @@ std::string statusText(const OrtApi* api, OrtStatus* status) {
     const std::string text = message ? message : "ONNX Runtime error";
     api->ReleaseStatus(status);
     return text;
+}
+
+const char* elementTypeName(ONNXTensorElementDataType type) {
+    switch (type) {
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT: return "FLOAT32";
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16: return "FLOAT16";
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE: return "FLOAT64";
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8: return "INT8";
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8: return "UINT8";
+        default: return "UNKNOWN";
+    }
+}
+
+uint16_t floatToHalf(float value) {
+    uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    const uint16_t sign = static_cast<uint16_t>((bits >> 16) & 0x8000u);
+    const int32_t exponent = static_cast<int32_t>((bits >> 23) & 0xffu) - 127 + 15;
+    uint32_t mantissa = bits & 0x7fffffu;
+    if (((bits >> 23) & 0xffu) == 0xffu) {
+        return static_cast<uint16_t>(sign | 0x7c00u | (mantissa ? 0x200u : 0u));
+    }
+    if (exponent >= 31) return static_cast<uint16_t>(sign | 0x7c00u);
+    if (exponent <= 0) {
+        if (exponent < -10) return sign;
+        mantissa |= 0x800000u;
+        const int shift = 14 - exponent;
+        return static_cast<uint16_t>(sign | (mantissa >> (shift + 13)));
+    }
+    return static_cast<uint16_t>(sign | (static_cast<uint32_t>(exponent) << 10) |
+                                 (mantissa >> 13));
+}
+
+float halfToFloat(uint16_t value) {
+    const uint32_t sign = static_cast<uint32_t>(value & 0x8000u) << 16;
+    const uint32_t exponent = (value >> 10) & 0x1fu;
+    uint32_t mantissa = value & 0x3ffu;
+    uint32_t bits = 0;
+    if (exponent == 0) {
+        if (mantissa == 0) {
+            bits = sign;
+        } else {
+            int shift = 0;
+            while ((mantissa & 0x400u) == 0) {
+                mantissa <<= 1;
+                ++shift;
+            }
+            mantissa &= 0x3ffu;
+            bits = sign | (static_cast<uint32_t>(127 - 15 - shift) << 23) |
+                   (mantissa << 13);
+        }
+    } else if (exponent == 31) {
+        bits = sign | 0x7f800000u | (mantissa << 13);
+    } else {
+        bits = sign | ((exponent + 112) << 23) | (mantissa << 13);
+    }
+    float result = 0.0f;
+    std::memcpy(&result, &bits, sizeof(result));
+    return result;
+}
+
+bool readTypeInfo(const OrtApi* api, OrtSession* session, bool input,
+                  ModelInfo& info, std::string* error) {
+    OrtTypeInfo* typeInfo = nullptr;
+    OrtStatus* status = input ? api->SessionGetInputTypeInfo(session, 0, &typeInfo)
+                              : api->SessionGetOutputTypeInfo(session, 0, &typeInfo);
+    if (status) {
+        if (error) *error = statusText(api, status);
+        return false;
+    }
+    const OrtTensorTypeAndShapeInfo* shapeInfo = nullptr;
+    status = api->CastTypeInfoToTensorInfo(typeInfo, &shapeInfo);
+    if (status || !shapeInfo) {
+        if (status) {
+            if (error) *error = statusText(api, status);
+        } else if (error) {
+            *error = "Model input/output is not a tensor.";
+        }
+        api->ReleaseTypeInfo(typeInfo);
+        return false;
+    }
+
+    ONNXTensorElementDataType type = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+    status = api->GetTensorElementType(shapeInfo, &type);
+    if (status) {
+        if (error) *error = statusText(api, status);
+        api->ReleaseTypeInfo(typeInfo);
+        return false;
+    }
+    size_t rank = 0;
+    status = api->GetDimensionsCount(shapeInfo, &rank);
+    if (status) {
+        if (error) *error = statusText(api, status);
+        api->ReleaseTypeInfo(typeInfo);
+        return false;
+    }
+    std::vector<int64_t> dimensions(rank);
+    if (rank > 0) {
+        status = api->GetDimensions(shapeInfo, dimensions.data(), rank);
+        if (status) {
+            if (error) *error = statusText(api, status);
+            api->ReleaseTypeInfo(typeInfo);
+            return false;
+        }
+    }
+
+    if (input) {
+        info.inputType = elementTypeName(type);
+        info.inputShape = std::move(dimensions);
+    } else {
+        info.outputType = elementTypeName(type);
+        info.outputShape = std::move(dimensions);
+    }
+    api->ReleaseTypeInfo(typeInfo);
+    return true;
 }
 
 } // namespace
@@ -91,6 +207,8 @@ void OnnxSession::release() {
     api_ = nullptr;
     inputName_.clear();
     outputName_.clear();
+    info_ = {};
+    inputType_ = 0;
 }
 
 bool OnnxSession::load(const OnnxRuntime& runtime,
@@ -200,6 +318,25 @@ bool OnnxSession::load(const OnnxRuntime& runtime,
     freeStatus = api_->AllocatorFree(allocator, name);
     if (freeStatus) api_->ReleaseStatus(freeStatus);
 
+    if (!readTypeInfo(api_, session_, true, info_, error) ||
+        !readTypeInfo(api_, session_, false, info_, error)) {
+        release();
+        return false;
+    }
+    if (info_.inputType != "FLOAT32" && info_.inputType != "FLOAT16") {
+        if (error) *error = "Depth model input must be float32 or float16.";
+        release();
+        return false;
+    }
+    if (info_.outputType != "FLOAT32" && info_.outputType != "FLOAT16") {
+        if (error) *error = "Depth model output must be float32 or float16.";
+        release();
+        return false;
+    }
+    inputType_ = info_.inputType == "FLOAT16"
+                     ? ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16
+                     : ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
+
     status = api_->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault,
                                        &memoryInfo_);
     if (status) {
@@ -245,11 +382,22 @@ bool OnnxSession::run(const std::vector<float>& input, int height, int width,
     }
 
     const int64_t shape[4] = {1, 3, height, width};
+    std::vector<uint16_t> halfInput;
+    const void* inputData = input.data();
+    size_t inputBytes = input.size() * sizeof(float);
+    if (inputType_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
+        halfInput.resize(input.size());
+        for (size_t i = 0; i < input.size(); ++i) {
+            halfInput[i] = floatToHalf(input[i]);
+        }
+        inputData = halfInput.data();
+        inputBytes = halfInput.size() * sizeof(uint16_t);
+    }
+
     OrtValue* inputValue = nullptr;
     OrtStatus* status = api_->CreateTensorWithDataAsOrtValue(
-        memoryInfo_, const_cast<float*>(input.data()),
-        input.size() * sizeof(float), shape, 4,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &inputValue);
+        memoryInfo_, const_cast<void*>(inputData), inputBytes, shape, 4,
+        static_cast<ONNXTensorElementDataType>(inputType_), &inputValue);
     if (status) {
         if (error) *error = statusText(api_, status);
         return false;
@@ -302,11 +450,12 @@ bool OnnxSession::run(const std::vector<float>& input, int height, int width,
 
     ONNXTensorElementDataType elementType = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
     status = api_->GetTensorElementType(info, &elementType);
-    if (status || elementType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+    if (status || (elementType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT &&
+                   elementType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16)) {
         if (status) {
             if (error) *error = statusText(api_, status);
         } else if (error) {
-            *error = "Depth output must be float32.";
+            *error = "Depth output must be float32 or float16.";
         }
         api_->ReleaseTensorTypeAndShapeInfo(info);
         api_->ReleaseValue(outputValue);
@@ -337,8 +486,14 @@ bool OnnxSession::run(const std::vector<float>& input, int height, int width,
         return false;
     }
 
-    const float* values = static_cast<const float*>(data);
-    output.assign(values, values + count);
+    if (elementType == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
+        const uint16_t* values = static_cast<const uint16_t*>(data);
+        output.resize(count);
+        for (size_t i = 0; i < count; ++i) output[i] = halfToFloat(values[i]);
+    } else {
+        const float* values = static_cast<const float*>(data);
+        output.assign(values, values + count);
+    }
     api_->ReleaseValue(outputValue);
     return true;
 }

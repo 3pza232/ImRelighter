@@ -105,6 +105,7 @@
   "settings.model_path": "Path",
   "settings.model_size": "Size",
   "settings.model_sha": "SHA-256",
+  "settings.model_type": "Model Type",
   "settings.open_model_dir": "Open Model Folder",
   "settings.about": "About",
   "settings.version": "Version",

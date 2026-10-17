@@ -15,6 +15,10 @@
 #include "ui/theme.h"
 #include "ui/widgets.h"
 
+#ifndef IMRELIGHTER_VERSION
+#define IMRELIGHTER_VERSION "0.1.1"
+#endif
+
 namespace ui {
 
 namespace {
@@ -996,6 +1000,12 @@ void drawSettings(app::App& app) {
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("%s", paths::toUtf8(app.modelPath()).c_str());
                     }
+                    if (!app.modelPath().empty()) {
+                        app.inspectModelInfo();
+                        ImGui::TextDisabled("%s",
+                                            app.tr("settings.model_type").c_str());
+                        ImGui::TextUnformatted(app.modelType().c_str());
+                    }
                     ImGui::Spacing();
                     ImGui::TextDisabled("%s",
                                         app.tr("settings.model_size").c_str());
@@ -1006,6 +1016,7 @@ void drawSettings(app::App& app) {
                     const std::string modelSha = app.modelSha();
                     ImGui::TextWrapped("%s", modelSha.empty() ? "—" : modelSha.c_str());
                     ImGui::Spacing();
+
                     if (ImGui::Button(
                             app.tr("settings.choose_model_file").c_str(),
                             ImVec2(-1.0f, 0.0f))) {
@@ -1036,7 +1047,8 @@ void drawSettings(app::App& app) {
             if (ImGui::BeginTabItem(
                     (app.tr("settings.about") + "###about").c_str())) {
                 sectionTitle(app.tr("settings.about").c_str());
-                ImGui::Text("%s 0.1.0", app.tr("settings.version").c_str());
+                ImGui::Text("%s %s", app.tr("settings.version").c_str(),
+                            IMRELIGHTER_VERSION);
                 ImGui::TextDisabled("by pza");
                 ImGui::Text("%s: %s", app.tr("settings.opengl").c_str(),
                             app.glVersion().c_str());

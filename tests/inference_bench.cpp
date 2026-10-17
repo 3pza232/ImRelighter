@@ -35,7 +35,7 @@ double runOnce(ml::OnnxSession& session, const ml::PreprocessResult& input) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     constexpr int width = 512;
     constexpr int height = 512;
@@ -63,7 +63,7 @@ int main() {
         return 2;
     }
 
-    const char* model = IMRELIGHTER_MODEL_PATH;
+    const char* model = argc > 1 ? argv[1] : IMRELIGHTER_MODEL_PATH;
     ml::OnnxSession cpu;
     if (!cpu.load(runtime, model, false, &error)) {
         std::printf("CPU session failed: %s\n", error.c_str());

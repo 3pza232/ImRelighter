@@ -4,6 +4,16 @@
 
 `models/depth-anything-v2-small/model.onnx`，Depth Anything V2 Small，Apache-2.0。
 
+## 模型信息与精度
+
+设置 → 模型会在路径下方显示所选 ONNX 的模型类型（fp32 / fp16）。
+判断优先看权重 initializer 的存储精度；即使模型图的输入/输出仍是 FP32，只要权重主体是 FP16，也会显示 fp16。
+
+- 支持 **FLOAT32** 与 **FLOAT16** 输入/输出
+- FLOAT16 输入会自动从归一化 float32 转换；输出会转回 float32
+- INT8/Q4 等量化类型暂不支持
+- 固定输入尺寸、多输入/多输出模型仍需要额外适配
+
 ## 当前运行时假设
 
 - ONNX 只有 1 个输入、1 个输出。
