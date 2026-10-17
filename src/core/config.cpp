@@ -1,0 +1,100 @@
+#include "core/config.h"
+
+#include <fstream>
+
+#include "core/i18n.h"
+#include "io/paths.h"
+#include "nlohmann/json.hpp"
+
+namespace core {
+
+const char* backendKey(Backend backend) {
+    switch (backend) {
+        case Backend::Cpu: return "cpu";
+        case Backend::Dml: return "dml";
+        case Backend::Auto: return "auto";
+    }
+    return "auto";
+}
+
+const char* themeKey(Theme theme) {
+    switch (theme) {
+        case Theme::Light: return "light";
+        case Theme::Dark: return "dark";
+    }
+    return "dark";
+}
+
+Theme themeFromCode(const std::string& code) {
+    if (code == "light") return Theme::Light;
+    return Theme::Dark;
+}
+
+Backend backendFromCode(const std::string& code) {
+    if (code == "cpu") return Backend::Cpu;
+    if (code == "dml") return Backend::Dml;
+    return Backend::Auto;
+}
+
+bool loadUserConfig(UserConfig& config, std::string* error) {
+    const auto path = paths::configFile();
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) return true; // No config yet is not an error.
+
+    try {
+        nlohmann::json json;
+        stream >> json;
+
+        if (json.contains("language") && json["language"].is_string()) {
+            config.language = I18n::fromCode(json["language"].get<std::string>());
+            config.languageSet = true;
+        }
+        if (json.contains("backend") && json["backend"].is_string()) {
+            config.backend = backendFromCode(json["backend"].get<std::string>());
+        }
+        if (json.contains("theme") && json["theme"].is_string()) {
+            config.theme = themeFromCode(json["theme"].get<std::string>());
+        }
+        if (json.contains("modelFile") && json["modelFile"].is_string()) {
+            config.modelFile = json["modelFile"].get<std::string>();
+        }
+        if (json.contains("modelDir") && json["modelDir"].is_string()) {
+            config.modelDir = json["modelDir"].get<std::string>();
+        }
+        if (json.contains("modelSelectionCleared") &&
+            json["modelSelectionCleared"].is_boolean()) {
+            config.modelSelectionCleared =
+                json["modelSelectionCleared"].get<bool>();
+        }
+        return true;
+    } catch (const std::exception& e) {
+        if (error) *error = std::string("Failed to read config: ") + e.what();
+        return false;
+    }
+}
+
+bool saveUserConfig(const UserConfig& config, std::string* error) {
+    try {
+        nlohmann::json json;
+        json["version"] = 1;
+        json["language"] = I18n::code(config.language);
+        json["backend"] = backendKey(config.backend);
+        json["theme"] = themeKey(config.theme);
+        if (!config.modelFile.empty()) json["modelFile"] = config.modelFile;
+        if (!config.modelDir.empty()) json["modelDir"] = config.modelDir;
+        if (config.modelSelectionCleared) json["modelSelectionCleared"] = true;
+
+        std::ofstream stream(paths::configFile(), std::ios::binary | std::ios::trunc);
+        if (!stream) {
+            if (error) *error = "Cannot write config file";
+            return false;
+        }
+        stream << json.dump(2) << '\n';
+        return true;
+    } catch (const std::exception& e) {
+        if (error) *error = std::string("Failed to save config: ") + e.what();
+        return false;
+    }
+}
+
+} // namespace core

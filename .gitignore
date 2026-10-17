@@ -1,0 +1,27 @@
+# Build output
+build/
+out/
+dist/
+
+# Runtime state
+config.json
+*.tmp
+*.log
+
+# IDE / compiler
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.pdb
+*.ilk
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Test scratch files
+tests/golden/*.tmp
+tests/data/*.tmp

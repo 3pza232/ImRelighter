@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "name": "Depth Anything V2 Small",
+  "id": "onnx-community/depth-anything-v2-small",
+  "revision": "4472b7362082ad9968fee890ca0f1e5aca36b93d",
+  "license": "Apache-2.0",
+  "source": "https://huggingface.co/onnx-community/depth-anything-v2-small",
+  "file": {
+    "path": "model.onnx",
+    "size": 99060839,
+    "sha256": "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
+  },
+  "input": {
+    "channels": 3,
+    "color": "RGB",
+    "layout": "NCHW",
+    "dtype": "float32",
+    "dynamic_size": true
+  },
+  "preprocess": {
+    "size": 518,
+    "keep_aspect_ratio": true,
+    "ensure_multiple_of": 14,
+    "do_pad": false,
+    "resample": "bicubic",
+    "rescale_factor": 0.00392156862745098,
+    "mean": [0.485, 0.456, 0.406],
+    "std": [0.229, 0.224, 0.225]
+  },
+  "output": {
+    "channels": 1,
+    "meaning": "relative depth, larger = nearer",
+    "resize_to_input_image": "bilinear"
+  }
+}

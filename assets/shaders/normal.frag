@@ -1,0 +1,45 @@
+#version 450 core
+
+in vec2 vUv;
+out vec4 outNormal;
+
+uniform sampler2D uHeight;
+uniform sampler2D uColor;
+uniform vec2 uTexel;
+uniform vec2 uImageSize;
+uniform float uAmplitude;
+uniform float uNormalStrength;
+uniform vec3 uFlips;
+
+float heightAt(vec2 uv) {
+    return texture(uHeight, uv).r * uAmplitude;
+}
+
+void main() {
+    float c = heightAt(vUv);
+    float l = heightAt(vUv - vec2(uTexel.x, 0.0));
+    float r = heightAt(vUv + vec2(uTexel.x, 0.0));
+    float b = heightAt(vUv - vec2(0.0, uTexel.y));
+    float u = heightAt(vUv + vec2(0.0, uTexel.y));
+
+    float limit = 0.055 * max(uAmplitude, 0.001);
+    float dx = (abs(r - c) < limit && abs(c - l) < limit)
+                   ? (r - l) * 0.5
+                   : (abs(r - c) < abs(c - l) ? r - c : c - l);
+    float dy = (abs(u - c) < limit && abs(c - b) < limit)
+                   ? (u - b) * 0.5
+                   : (abs(u - c) < abs(c - b) ? u - c : c - b);
+
+    if (min(abs(r - c), abs(l - c)) > limit) dx = 0.0;
+    if (min(abs(u - c), abs(b - c)) > limit) dy = 0.0;
+
+    // Slope scale follows the actual render target, so preview and
+    // full-resolution export produce the same normals.
+    const float slopeScale = 0.5 / max(uTexel.y, 1e-6);
+    vec3 n = normalize(vec3(-dx * slopeScale, dy * slopeScale, 1.0));
+    n.xy *= uNormalStrength;
+    n *= uFlips;
+    n = normalize(n);
+
+    outNormal = vec4(n * 0.5 + 0.5, texture(uColor, vUv).a);
+}
