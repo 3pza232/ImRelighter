@@ -15,7 +15,7 @@
 #include "ui/widgets.h"
 
 #ifndef IMRELIGHTER_VERSION
-#define IMRELIGHTER_VERSION "0.2.0"
+#define IMRELIGHTER_VERSION "0.2.1"
 #endif
 
 namespace ui {

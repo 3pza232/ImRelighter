@@ -1,4 +1,4 @@
-# ImRelighter 0.2.0
+# ImRelighter 0.2.1
 
 > 让一张图拥有可编辑的光。
 
@@ -18,7 +18,7 @@ ImRelighter 是 Windows 本地的单图重打光工具：在本地用 ONNX 模�
 
 ## 安装
 
-发布页提供 `ImRelighter-0.2.0-setup.exe`。安装器支持简体中文与 English，按用户安装到 `%LOCALAPPDATA%\Programs\ImRelighter`，创建开始菜单项，并可选创建桌面快捷方式。卸载默认保留 `config.json`，便于重新安装后继续使用原有设置。
+发布页提供 `ImRelighter-0.2.1-setup.exe`。安装器支持简体中文与 English，按用户安装到 `%LOCALAPPDATA%\Programs\ImRelighter`，创建开始菜单项，并可选创建桌面快捷方式。卸载默认保留 `config.json`，便于重新安装后继续使用原有设置。
 
 也可以直接解压运行目录使用，不写注册表。运行要求与安装器行为见 [docs/packaging.md](docs/packaging.md)。
 
@@ -67,7 +67,7 @@ cmake --build build
 powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1 -FetchVCRedist
 ```
 
-输出为 `dist/ImRelighter-0.2.0-setup.exe` 与对应 `.sha256`。
+输出为 `dist/ImRelighter-0.2.1-setup.exe` 与对应 `.sha256`。
 
 ## 运行
 
