@@ -2,7 +2,7 @@
   "version": 6,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 24,
+    "minor": 26,
     "patch": 0
   },
   "configurePresets": [
@@ -12,10 +12,7 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/mingw-debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "D:/VSCode/MinGW/bin/gcc.exe",
-        "CMAKE_CXX_COMPILER": "D:/VSCode/MinGW/bin/g++.exe",
-        "CMAKE_MAKE_PROGRAM": "D:/Qt/Tools/Ninja/ninja.exe"
+        "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
@@ -24,10 +21,7 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/mingw-release",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_C_COMPILER": "D:/VSCode/MinGW/bin/gcc.exe",
-        "CMAKE_CXX_COMPILER": "D:/VSCode/MinGW/bin/g++.exe",
-        "CMAKE_MAKE_PROGRAM": "D:/Qt/Tools/Ninja/ninja.exe"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     }
   ],
