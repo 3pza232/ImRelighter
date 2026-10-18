@@ -19,8 +19,9 @@ float heightAt(vec2 uv) {
 }
 
 float colorLuma(vec2 uv) {
-    // uColor is stored top-down while vUv addresses the flipped render target.
-    vec3 color = texture(uColor, vec2(uv.x, 1.0 - uv.y)).rgb;
+    // The height target is already top-down, matching the color texture. Do not
+    // flip V here or detail gradients come from a vertically mirrored image.
+    vec3 color = texture(uColor, uv).rgb;
     return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
@@ -63,6 +64,9 @@ void main() {
           colorLuma(vUv - vec2(detailTexel.x, 0.0))),
         colorLuma(vUv + vec2(0.0, detailTexel.y)) -
             colorLuma(vUv - vec2(0.0, detailTexel.y)));
+    // Cap per-axis albedo slopes so hard graphic edges (ties, glasses, text)
+    // do not emboss as raised ridges while fine texture still survives.
+    detail = clamp(detail, vec2(-0.08), vec2(0.08));
     slope += detail * uDetailStrength * 8.0;
 
     // Relative depth has no reliable absolute scale. Soft-saturating the slope

@@ -235,6 +235,56 @@ void testNormalSlopeClamp(gpu::Renderer& renderer) {
           "normal slope is clamped at depth discontinuities");
 }
 
+void testDetailOrientation(gpu::Renderer& renderer) {
+    core::Document doc;
+    doc.id = 3;
+    doc.width = 64;
+    doc.height = 64;
+    doc.hasDepth = true;
+    doc.color.resize(static_cast<size_t>(doc.width) * doc.height * 4);
+    const int rampStart = doc.height / 2;
+    for (int y = 0; y < doc.height; ++y) {
+        for (int x = 0; x < doc.width; ++x) {
+            const uint8_t value =
+                y < rampStart
+                    ? 0
+                    : static_cast<uint8_t>((y - rampStart + 1) * 255 /
+                                           (doc.height - rampStart));
+            const size_t i = (static_cast<size_t>(y) * doc.width + x) * 4;
+            doc.color[i + 0] = value;
+            doc.color[i + 1] = value;
+            doc.color[i + 2] = value;
+            doc.color[i + 3] = 255;
+        }
+    }
+    doc.depth.assign(static_cast<size_t>(doc.width) * doc.height, 0.5f);
+    doc.settings.height = 0.01f;
+    doc.settings.smooth = 0.0f;
+    doc.settings.normalStrength = 0.1f;
+    doc.settings.detail = 1.0f;
+    doc.settings.rim = 0.0f;
+    doc.settings.specular = 0.0f;
+    doc.lights.clear();
+
+    const auto image = render(renderer, doc, core::View::Normal);
+    if (image.empty()) return;
+    const auto meanGreen = [&](int begin, int end) {
+        double sum = 0.0;
+        int count = 0;
+        for (int y = begin; y < end; ++y) {
+            for (int x = 0; x < doc.width; ++x) {
+                sum += image[(static_cast<size_t>(y) * doc.width + x) * 4 + 1];
+                ++count;
+            }
+        }
+        return sum / std::max(1, count);
+    };
+    const double above = meanGreen(rampStart - 24, rampStart - 8);
+    const double below = meanGreen(rampStart + 8, rampStart + 24);
+    check(above > 120.0 && above < 140.0 && below > 150.0,
+          "albedo detail is not vertically mirrored");
+}
+
 void testQualitySettings(gpu::Renderer& renderer) {
     core::Document doc = makeDocument();
     doc.settings.previewLongEdge = 1024;
@@ -323,6 +373,7 @@ int main() {
     testDepthOrientation(renderer);
     testDepthSmoothing(renderer);
     testNormalSlopeClamp(renderer);
+    testDetailOrientation(renderer);
     testNormalFlip(renderer);
     testQualitySettings(renderer);
     testAlpha(renderer);
