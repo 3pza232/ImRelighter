@@ -55,6 +55,7 @@ public:
     void setLanguage(core::Language language);
     void setBackend(core::Backend backend);
     void setTheme(core::Theme theme);
+    void setResourceLimits(int maxTasks, int memoryLimitGb);
     void resetTask();
 
     bool hasTask() const;

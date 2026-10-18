@@ -172,6 +172,16 @@ void testNormalFlip(gpu::Renderer& renderer) {
           "flipX changes derived normal X channel");
 }
 
+void testQualitySettings(gpu::Renderer& renderer) {
+    core::Document doc = makeDocument();
+    doc.settings.previewLongEdge = 1024;
+    doc.settings.shadowDivisor = 4;
+    doc.settings.shadowSteps = 32;
+    doc.settings.shadowSamples = 1;
+    const auto image = render(renderer, doc, core::View::Lit);
+    check(!image.empty(), "custom render quality settings render");
+}
+
 void testAlpha(gpu::Renderer& renderer) {
     core::Document doc = makeDocument();
     const auto image = render(renderer, doc, core::View::Lit);
@@ -249,6 +259,7 @@ int main() {
     testFlatShadow(renderer);
     testDepthOrientation(renderer);
     testNormalFlip(renderer);
+    testQualitySettings(renderer);
     testAlpha(renderer);
 
     renderer.shutdown();

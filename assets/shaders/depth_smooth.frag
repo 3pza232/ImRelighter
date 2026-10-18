@@ -6,6 +6,7 @@ out float outHeight;
 uniform sampler2D uDepth;
 uniform sampler2D uColor;
 uniform vec2 uTexel;
+uniform vec2 uImageSize;
 uniform float uLow;
 uniform float uSpan;
 uniform float uSmooth;
@@ -31,11 +32,12 @@ void main() {
         return;
     }
 
+    const vec2 texel = 1.0 / max(uImageSize, vec2(1.0));
     float sum = 0.0;
     float weightSum = 0.0;
     for (int y = -2; y <= 2; ++y) {
         for (int x = -2; x <= 2; ++x) {
-            vec2 uv = vUv + vec2(float(x), float(y)) * uTexel;
+            vec2 uv = vUv + vec2(float(x), float(y)) * texel;
             if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
                 continue;
             }

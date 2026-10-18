@@ -33,11 +33,16 @@ uniform float uLightRange[8];
 uniform int uLightEnabled[8];
 
 vec3 linearize(vec3 color) {
-    return pow(max(color, vec3(0.0)), vec3(2.2));
+    return mix(color / 12.92,
+               pow((color + 0.055) / 1.055, vec3(2.4)),
+               step(vec3(0.04045), color));
 }
 
 vec3 encode(vec3 color) {
-    return pow(clamp(color, 0.0, 1.0), vec3(1.0 / 2.2));
+    color = max(color, vec3(0.0));
+    return mix(color * 12.92,
+               1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055,
+               step(vec3(0.0031308), color));
 }
 
 vec3 positionAt(vec2 uv, float height) {
@@ -90,7 +95,7 @@ void main() {
         highlights += radiance * (shine + edge) * vis;
     }
 
-    vec3 ambientLight = linearize(uAmbientColor) * uAmbient;
+    vec3 ambientLight = uAmbientColor * uAmbient;
     vec3 illumination = ambientLight + direct;
     vec3 result = base * illumination + highlights;
     if (uBaseMode == 0) {

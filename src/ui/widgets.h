@@ -40,6 +40,23 @@ bool vector3Control(const char* id, float values[3], const float mins[3],
                     const float maxs[3], float speed = 0.01f,
                     const char* format = "%.2f");
 
+// Auto-height card used by the right inspector hierarchy.
+class Card {
+public:
+    Card(const char* id, float padding, const ImVec4& background,
+         bool border = true, float indent = 0.0f);
+    ~Card();
+
+    Card(const Card&) = delete;
+    Card& operator=(const Card&) = delete;
+
+    explicit operator bool() const { return open_; }
+
+private:
+    bool open_ = false;
+    float indent_ = 0.0f;
+};
+
 // Bordered content box for grouping related fields.
 class Box {
 public:

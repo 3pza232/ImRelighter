@@ -14,6 +14,8 @@ struct UserConfig {
     std::string modelFile; // UTF-8; empty = bundled model unless cleared
     std::string modelDir; // legacy folder selection
     bool modelSelectionCleared = false;
+    int maxTasks = 100;
+    int memoryLimitGb = 4;
 };
 
 bool loadUserConfig(UserConfig& config, std::string* error = nullptr);

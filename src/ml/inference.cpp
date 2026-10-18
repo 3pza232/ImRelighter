@@ -108,7 +108,8 @@ void InferenceService::workerLoop() {
         }
 
         if (result.error.empty() && !cancelRequested_.load()) {
-            const ModelConfig modelConfig = loadModelConfig(job.modelPath);
+            ModelConfig modelConfig = loadModelConfig(job.modelPath);
+            if (job.inputSize > 0) modelConfig.inputSize = job.inputSize;
             PreprocessResult preprocessed;
             std::string error;
             if (!preprocess(job.rgba.data(), job.width, job.height, preprocessed,

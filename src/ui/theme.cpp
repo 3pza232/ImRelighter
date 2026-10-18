@@ -166,7 +166,7 @@ void apply() {
     style.WindowBorderSize = 0.0f;
     style.ChildBorderSize = 1.0f;
     style.PopupBorderSize = 1.0f;
-    style.FrameBorderSize = 0.0f;
+    style.FrameBorderSize = 1.0f;
     style.SeparatorTextBorderSize = 1.0f;
 
     style.WindowPadding = ImVec2(16.0f, 16.0f);
@@ -191,7 +191,7 @@ void apply() {
     c[ImGuiCol_Border] = border;
     c[ImGuiCol_BorderShadow] = transparent;
 
-    c[ImGuiCol_FrameBg] = panel2;
+    c[ImGuiCol_FrameBg] = canvas;
     c[ImGuiCol_FrameBgHovered] = fieldHover;
     c[ImGuiCol_FrameBgActive] = fieldActive;
 
@@ -209,7 +209,7 @@ void apply() {
     c[ImGuiCol_SliderGrab] = accent;
     c[ImGuiCol_SliderGrabActive] = sliderActive;
 
-    c[ImGuiCol_Button] = panel2;
+    c[ImGuiCol_Button] = canvas;
     c[ImGuiCol_ButtonHovered] = buttonHover;
     c[ImGuiCol_ButtonActive] = buttonActive;
 

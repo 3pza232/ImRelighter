@@ -26,7 +26,7 @@ namespace {
 constexpr float kTopBarHeight = 58.0f;
 constexpr float kStatusHeight = 36.0f;
 constexpr float kSidebarWidth = 236.0f;
-constexpr float kRightWidth = 360.0f;
+constexpr float kRightWidth = 540.0f;
 constexpr float kLabelWidth = 160.0f;
 constexpr float kCollapsedSidebarWidth = 38.0f;
 constexpr float kCanvasBarHeight = 44.0f;
@@ -36,7 +36,7 @@ constexpr float kTaskThumbSize = 64.0f;
 constexpr float kTaskCloseWidth = 30.0f;
 constexpr float kTaskCloseGap = 6.0f;
 constexpr float kSettingsLabelWidth = 150.0f;
-constexpr float kPositionBoxHeight = 80.0f;
+constexpr float kPositionBoxHeight = 92.0f;
 
 const ImGuiWindowFlags kRootFlags =
     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
@@ -45,12 +45,27 @@ const ImGuiWindowFlags kRootFlags =
     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
 
+void sectionCardHeader(app::App& app, const char* key) {
+    ImGui::TextColored(theme::accent, "%s", app.tr(key).c_str());
+    ImGui::Separator();
+}
+
 bool sliderRow(app::App& app, const char* labelKey, float& value, float min,
                float max, const char* format) {
     ImGui::PushID(labelKey);
     formLabel(app.tr(labelKey).c_str(), kLabelWidth);
     ImGui::SetNextItemWidth(-1.0f);
     const bool changed = ImGui::SliderFloat("##value", &value, min, max, format);
+    ImGui::PopID();
+    return changed;
+}
+
+bool sliderIntRow(app::App& app, const char* labelKey, int& value, int min,
+                   int max) {
+    ImGui::PushID(labelKey);
+    formLabel(app.tr(labelKey).c_str(), kLabelWidth);
+    ImGui::SetNextItemWidth(-1.0f);
+    const bool changed = ImGui::SliderInt("##value", &value, min, max);
     ImGui::PopID();
     return changed;
 }
@@ -644,7 +659,9 @@ void drawCanvas(app::App& app) {
     ImGui::PopStyleColor();
 }
 void drawImageSection(app::App& app) {
-    sectionTitle(app.tr("panel.image").c_str());
+    Card section("##section_image", 14.0f, theme::panel2);
+    if (!section) return;
+    sectionCardHeader(app, "panel.image");
 
     ImGui::SeparatorText(app.tr("panel.image.model").c_str());
     const bool modelReady = app.modelExists();
@@ -656,6 +673,22 @@ void drawImageSection(app::App& app) {
     ImGui::TextUnformatted(app.tr("panel.image.backend").c_str());
     ImGui::SameLine(kLabelWidth);
     ImGui::TextDisabled("%s", backendLabel(app, app.config.backend).c_str());
+
+    ImGui::TextUnformatted(app.tr("inference.size").c_str());
+    ImGui::SameLine(kLabelWidth);
+    const std::string autoLabel = app.tr("inference.auto");
+    const char* sizeLabels[] = {autoLabel.c_str(), "384", "504", "518", "672"};
+    int sizeIndex = 0;
+    if (app.ui.settings.inferenceSize == 384) sizeIndex = 1;
+    else if (app.ui.settings.inferenceSize == 504) sizeIndex = 2;
+    else if (app.ui.settings.inferenceSize == 518) sizeIndex = 3;
+    else if (app.ui.settings.inferenceSize == 672) sizeIndex = 4;
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::Combo("##inference_size", &sizeIndex, sizeLabels,
+                     IM_ARRAYSIZE(sizeLabels))) {
+        const int sizes[] = {0, 384, 504, 518, 672};
+        app.ui.settings.inferenceSize = sizes[sizeIndex];
+    }
 
     ImGui::TextUnformatted(app.tr("panel.image.depth").c_str());
     ImGui::SameLine(kLabelWidth);
@@ -676,7 +709,8 @@ void drawImageSection(app::App& app) {
         ImGui::PushStyleColor(ImGuiCol_Text, theme::ink);
     }
     ImGui::BeginDisabled(!canGenerate);
-    if (ImGui::Button(app.tr("panel.image.generate").c_str(), ImVec2(-1.0f, 34.0f))) {
+    if (ImGui::Button(app.tr("panel.image.generate").c_str(),
+                      ImVec2(-1.0f, 34.0f))) {
         app.generateDepth();
     }
     ImGui::EndDisabled();
@@ -687,7 +721,8 @@ void drawImageSection(app::App& app) {
         ImGui::PushStyleColor(ImGuiCol_Button, theme::danger);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme::dangerHover);
         ImGui::PushStyleColor(ImGuiCol_Text, theme::ink);
-        if (ImGui::Button(app.tr("panel.image.cancel").c_str(), ImVec2(-1.0f, 30.0f))) {
+        if (ImGui::Button(app.tr("panel.image.cancel").c_str(),
+                          ImVec2(-1.0f, 30.0f))) {
             app.cancelInference();
         }
         ImGui::PopStyleColor(3);
@@ -698,12 +733,14 @@ void drawImageSection(app::App& app) {
         ImGui::TextDisabled("%s", app.tr("panel.image.no_task").c_str());
     }
 }
-
 void drawLightSection(app::App& app) {
-    sectionTitle(app.tr("panel.light").c_str());
+    Card section("##section_light", 14.0f, theme::panel2);
+    if (!section) return;
+    sectionCardHeader(app, "panel.light");
 
     ImGui::SeparatorText(app.tr("section.light_list").c_str());
     ImGui::TextDisabled("%d / 8", static_cast<int>(app.ui.lights.size()));
+    ImGui::Spacing();
 
     for (auto& light : app.ui.lights) {
         ImGui::PushID(light.id);
@@ -711,16 +748,20 @@ void drawLightSection(app::App& app) {
         ImGui::TextUnformatted("●");
         ImGui::PopStyleColor();
         ImGui::SameLine();
-        if (ImGui::Selectable(light.name.c_str(), app.ui.selectedLight == light.id)) {
+        if (ImGui::Selectable(light.name.c_str(),
+                              app.ui.selectedLight == light.id)) {
             app.ui.selectedLight = light.id;
         }
         ImGui::PopID();
     }
 
+    ImGui::Spacing();
     ImGui::BeginDisabled(app.ui.lights.size() >= 8);
     if (ImGui::Button(app.tr("light.add").c_str())) {
         int nextId = 1;
-        for (const auto& light : app.ui.lights) nextId = std::max(nextId, light.id + 1);
+        for (const auto& light : app.ui.lights) {
+            nextId = std::max(nextId, light.id + 1);
+        }
         app.ui.lights.push_back(core::makeLight(nextId, {0.35f, 0.2f, 1.4f}));
         app.ui.selectedLight = nextId;
     }
@@ -734,13 +775,17 @@ void drawLightSection(app::App& app) {
                                return light.id == app.ui.selectedLight;
                            }),
             app.ui.lights.end());
-        if (!app.ui.lights.empty()) app.ui.selectedLight = app.ui.lights.front().id;
+        if (!app.ui.lights.empty()) {
+            app.ui.selectedLight = app.ui.lights.front().id;
+        }
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button(app.tr("light.toggle").c_str())) {
         for (auto& light : app.ui.lights) {
-            if (light.id == app.ui.selectedLight) light.enabled = !light.enabled;
+            if (light.id == app.ui.selectedLight) {
+                light.enabled = !light.enabled;
+            }
         }
     }
 
@@ -760,8 +805,8 @@ void drawLightSection(app::App& app) {
         const float positionMin[3] = {-2.0f, -2.0f, 0.1f};
         const float positionMax[3] = {2.0f, 2.0f, 4.0f};
         {
-            Box positionBox("##position_box",
-                            ImVec2(0.0f, kPositionBoxHeight), 10.0f, true);
+            Box positionBox("##position_box", ImVec2(0.0f, kPositionBoxHeight),
+                            10.0f, true);
             if (positionBox) {
                 vector3Control("##position", selected->position.data(),
                                positionMin, positionMax);
@@ -770,41 +815,86 @@ void drawLightSection(app::App& app) {
 
         ImGui::Spacing();
         colorRow(app, "light.color", selected->color);
-        sliderRow(app, "light.intensity", selected->intensity, 0.0f, 8.0f, "%.2f");
+        sliderRow(app, "light.intensity", selected->intensity, 0.0f, 8.0f,
+                  "%.2f");
         sliderRow(app, "light.range", selected->range, 0.2f, 8.0f, "%.2f");
     }
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.motion").c_str());
     checkboxRow(app, "light.orbit", app.ui.animate);
-
 }
-
 void drawShadingSection(app::App& app) {
-    sectionTitle(app.tr("panel.shading").c_str());
+    Card section("##section_shading", 14.0f, theme::panel2);
+    if (!section) return;
+    sectionCardHeader(app, "panel.shading");
 
     ImGui::SeparatorText(app.tr("section.environment").c_str());
     colorRow(app, "shading.ambient_color", app.ui.settings.ambientColor);
-    sliderRow(app, "shading.ambient", app.ui.settings.ambient, 0.0f, 2.0f, "%.2f");
+    sliderRow(app, "shading.ambient", app.ui.settings.ambient, 0.0f, 2.0f,
+              "%.2f");
     sliderRow(app, "shading.wrap", app.ui.settings.wrap, 0.0f, 1.0f, "%.2f");
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.shadows").c_str());
     checkboxRow(app, "shading.shadows", app.ui.settings.shadows);
     ImGui::BeginDisabled(!app.ui.settings.shadows);
-    sliderRow(app, "shading.bias", app.ui.settings.bias, 0.0001f, 0.1f, "%.4f");
-    sliderRow(app, "shading.softness", app.ui.settings.softness, 0.0f, 0.25f, "%.3f");
+    sliderRow(app, "shading.bias", app.ui.settings.bias, 0.0001f, 0.1f,
+              "%.4f");
+    sliderRow(app, "shading.softness", app.ui.settings.softness, 0.0f, 0.25f,
+              "%.3f");
     ImGui::EndDisabled();
 
-    if (ImGui::CollapsingHeader((app.tr("shading.highlights") + "###highlights").c_str())) {
-        sliderRow(app, "shading.specular", app.ui.settings.specular, 0.0f, 2.0f, "%.2f");
-        sliderRow(app, "shading.shininess", app.ui.settings.shininess, 1.0f, 256.0f, "%.0f");
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader(
+            (app.tr("shading.highlights") + "###highlights").c_str())) {
+        sliderRow(app, "shading.specular", app.ui.settings.specular, 0.0f,
+                  2.0f, "%.2f");
+        sliderRow(app, "shading.shininess", app.ui.settings.shininess, 1.0f,
+                  256.0f, "%.0f");
         sliderRow(app, "shading.rim", app.ui.settings.rim, 0.0f, 2.0f, "%.2f");
     }
-}
 
+    if (ImGui::CollapsingHeader(
+            (app.tr("quality.title") + "###quality").c_str())) {
+        sliderIntRow(app, "quality.shadow_steps",
+                     app.ui.settings.shadowSteps, 16, 192);
+        sliderIntRow(app, "quality.shadow_samples",
+                     app.ui.settings.shadowSamples, 1, 8);
+
+        const std::string fullLabel = app.tr("quality.full");
+        const char* resolutionLabels[] = {"1/2", "1/4", fullLabel.c_str()};
+        int resolutionIndex = app.ui.settings.shadowDivisor == 4
+                                  ? 1
+                                  : app.ui.settings.shadowDivisor == 1 ? 2 : 0;
+        ImGui::TextUnformatted(app.tr("quality.shadow_resolution").c_str());
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::Combo("##shadow_resolution", &resolutionIndex,
+                         resolutionLabels,
+                         IM_ARRAYSIZE(resolutionLabels))) {
+            const int divisors[] = {2, 4, 1};
+            app.ui.settings.shadowDivisor = divisors[resolutionIndex];
+        }
+
+        const char* previewLabels[] = {"1024", "1536", "2048"};
+        int previewIndex = app.ui.settings.previewLongEdge == 1024
+                               ? 0
+                               : app.ui.settings.previewLongEdge == 2048 ? 2 : 1;
+        ImGui::TextUnformatted(
+            app.tr("quality.preview_resolution").c_str());
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::Combo("##preview_resolution", &previewIndex,
+                         previewLabels,
+                         IM_ARRAYSIZE(previewLabels))) {
+            const int previewSizes[] = {1024, 1536, 2048};
+            app.ui.settings.previewLongEdge = previewSizes[previewIndex];
+        }
+    }
+}
 void drawSurfaceSection(app::App& app) {
-    sectionTitle(app.tr("panel.surface").c_str());
+    Card section("##section_surface", 14.0f, theme::panel2);
+    if (!section) return;
+    sectionCardHeader(app, "panel.surface");
 
     ImGui::SeparatorText(app.tr("section.base").c_str());
     ImGui::TextUnformatted(app.tr("surface.base_mode").c_str());
@@ -820,18 +910,24 @@ void drawSurfaceSection(app::App& app) {
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.depth_surface").c_str());
-    sliderRow(app, "surface.height", app.ui.settings.height, 0.01f, 2.0f, "%.2f");
-    sliderRow(app, "surface.normal_strength", app.ui.settings.normalStrength, 0.1f, 3.0f, "%.2f");
-    sliderRow(app, "surface.smooth", app.ui.settings.smooth, 0.0f, 4.0f, "%.1f");
+    sliderRow(app, "surface.height", app.ui.settings.height, 0.01f, 2.0f,
+              "%.2f");
+    sliderRow(app, "surface.normal_strength", app.ui.settings.normalStrength,
+              0.1f, 3.0f, "%.2f");
+    sliderRow(app, "surface.smooth", app.ui.settings.smooth, 0.0f, 4.0f,
+              "%.1f");
     checkboxRow(app, "surface.line_assist", app.ui.settings.lineAssist);
     checkboxRow(app, "surface.invert", app.ui.settings.invert);
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.composite").c_str());
     sliderRow(app, "surface.mix", app.ui.settings.mix, 0.0f, 1.0f, "%.2f");
-    sliderRow(app, "surface.exposure", app.ui.settings.exposure, -3.0f, 3.0f, "%.2f");
+    sliderRow(app, "surface.exposure", app.ui.settings.exposure, -3.0f, 3.0f,
+              "%.2f");
 
-    if (ImGui::CollapsingHeader((app.tr("surface.advanced") + "###advanced").c_str())) {
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader(
+            (app.tr("surface.advanced") + "###advanced").c_str())) {
         checkboxRow(app, "surface.flip_x", app.ui.settings.flipX);
         checkboxRow(app, "surface.flip_y", app.ui.settings.flipY);
         checkboxRow(app, "surface.flip_z", app.ui.settings.flipZ);
@@ -850,7 +946,6 @@ void drawSurfaceSection(app::App& app) {
         }
     }
 }
-
 void drawRightPanel(app::App& app) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::panel);
     {
@@ -972,6 +1067,23 @@ void drawSettings(app::App& app) {
                 if (!dmlReady) {
                     ImGui::TextDisabled("%s",
                                         app.tr("settings.dml_unavailable").c_str());
+                }
+
+                ImGui::Spacing();
+                sectionTitle(app.tr("settings.resources").c_str());
+                formLabel(app.tr("settings.max_tasks").c_str(),
+                          kSettingsLabelWidth);
+                int maxTasks = app.config.maxTasks;
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::SliderInt("##max_tasks", &maxTasks, 1, 500)) {
+                    app.setResourceLimits(maxTasks, app.config.memoryLimitGb);
+                }
+                formLabel(app.tr("settings.memory_limit").c_str(),
+                          kSettingsLabelWidth);
+                int memoryGb = app.config.memoryLimitGb;
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::SliderInt("##memory_limit", &memoryGb, 1, 16)) {
+                    app.setResourceLimits(app.config.maxTasks, memoryGb);
                 }
 
                 ImGui::EndTabItem();

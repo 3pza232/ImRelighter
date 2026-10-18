@@ -57,6 +57,12 @@ struct Settings {
     float depthMin = 0.0f;
     float depthMax = 1.0f;
     bool autoDepthRange = true;
+
+    int inferenceSize = 0; // 0 = model configuration
+    int shadowSteps = 96;
+    int shadowSamples = 4;
+    int shadowDivisor = 2;
+    int previewLongEdge = 1536;
 };
 
 inline Settings defaults() {

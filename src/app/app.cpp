@@ -38,8 +38,6 @@ namespace app {
 
 namespace {
 
-constexpr size_t kMaxDocuments = 12;
-constexpr uint64_t kMemoryBudget = 2ull * 1024ull * 1024ull * 1024ull;
 
 void glfwErrorCallback(int code, const char* description) {
     char buffer[1024];
@@ -439,8 +437,11 @@ void App::requestOpenImage() {
 }
 
 uint64_t App::addDocument(const std::filesystem::path& path, std::string* error) {
-    if (documents_.size() >= kMaxDocuments) {
-        if (error) *error = tr("document.limit");
+    const int taskLimit = std::clamp(config.maxTasks, 1, 500);
+    if (documents_.size() >= static_cast<size_t>(taskLimit)) {
+        if (error) {
+            *error = tr("document.limit") + " (" + std::to_string(taskLimit) + ")";
+        }
         return 0;
     }
 
@@ -456,8 +457,14 @@ uint64_t App::addDocument(const std::filesystem::path& path, std::string* error)
         image->rgba.size() +
         static_cast<uint64_t>(image->width) * image->height * sizeof(float) +
         128ull * 1024ull;
-    if (used + incoming > kMemoryBudget) {
-        if (error) *error = tr("document.memory");
+    const int memoryGb = std::clamp(config.memoryLimitGb, 1, 16);
+    const uint64_t memoryBudget =
+        static_cast<uint64_t>(memoryGb) * 1024ull * 1024ull * 1024ull;
+    if (used + incoming > memoryBudget) {
+        if (error) {
+            *error = tr("document.memory") + " (" + std::to_string(memoryGb) +
+                     " GB)";
+        }
         return 0;
     }
 
@@ -690,6 +697,7 @@ void App::generateDepth() {
     job.height = doc->height;
     job.rgba = doc->color;
     job.modelPath = modelPath();
+    job.inputSize = ui.settings.inferenceSize;
     job.useDml = config.backend == core::Backend::Dml ||
                  (config.backend == core::Backend::Auto && directmlAvailable());
     job.allowCpuFallback = config.backend == core::Backend::Auto;
@@ -725,6 +733,12 @@ void App::setTheme(core::Theme value) {
     config.theme = value;
     theme::setMode(value == core::Theme::Light ? theme::Mode::Light
                                                : theme::Mode::Dark);
+    saveConfig();
+}
+
+void App::setResourceLimits(int maxTasks, int memoryLimitGb) {
+    config.maxTasks = std::clamp(maxTasks, 1, 500);
+    config.memoryLimitGb = std::clamp(memoryLimitGb, 1, 16);
     saveConfig();
 }
 

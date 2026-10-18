@@ -1,5 +1,6 @@
 #include "core/config.h"
 
+#include <algorithm>
 #include <fstream>
 
 #include "core/i18n.h"
@@ -66,6 +67,15 @@ bool loadUserConfig(UserConfig& config, std::string* error) {
             config.modelSelectionCleared =
                 json["modelSelectionCleared"].get<bool>();
         }
+        if (json.contains("maxTasks") && json["maxTasks"].is_number_integer()) {
+            config.maxTasks = json["maxTasks"].get<int>();
+        }
+        if (json.contains("memoryLimitGb") &&
+            json["memoryLimitGb"].is_number_integer()) {
+            config.memoryLimitGb = json["memoryLimitGb"].get<int>();
+        }
+        config.maxTasks = std::clamp(config.maxTasks, 1, 500);
+        config.memoryLimitGb = std::clamp(config.memoryLimitGb, 1, 16);
         return true;
     } catch (const std::exception& e) {
         if (error) *error = std::string("Failed to read config: ") + e.what();
@@ -83,6 +93,8 @@ bool saveUserConfig(const UserConfig& config, std::string* error) {
         if (!config.modelFile.empty()) json["modelFile"] = config.modelFile;
         if (!config.modelDir.empty()) json["modelDir"] = config.modelDir;
         if (config.modelSelectionCleared) json["modelSelectionCleared"] = true;
+        json["maxTasks"] = std::clamp(config.maxTasks, 1, 500);
+        json["memoryLimitGb"] = std::clamp(config.memoryLimitGb, 1, 16);
 
         std::ofstream stream(paths::configFile(), std::ios::binary | std::ios::trunc);
         if (!stream) {

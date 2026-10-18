@@ -21,6 +21,7 @@ struct InferenceJob {
     int height = 0;
     std::vector<uint8_t> rgba;
     std::filesystem::path modelPath;
+    int inputSize = 0;
     bool useDml = false;
     bool allowCpuFallback = false;
 };

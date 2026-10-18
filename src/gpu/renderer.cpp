@@ -239,7 +239,8 @@ bool Renderer::ensureSource(const core::Document& doc, std::string* error) {
 
 bool Renderer::ensurePreviewTargets(const core::Document& doc,
                                     std::string* error) {
-    const int longEdge = std::min(1536, std::max(doc.width, doc.height));
+    const int requested = std::clamp(doc.settings.previewLongEdge, 512, 4096);
+    const int longEdge = std::min(requested, std::max(doc.width, doc.height));
     const int width = std::max(
         1, static_cast<int>(std::lround(static_cast<double>(doc.width) *
                                         longEdge /
@@ -253,12 +254,15 @@ bool Renderer::ensurePreviewTargets(const core::Document& doc,
 
 bool Renderer::ensureTargets(const core::Document& doc, int width, int height,
                              std::string* error) {
-    (void)doc;
     if (width <= 0 || height <= 0) {
         if (error) *error = "Invalid render target size.";
         return false;
     }
+    const int divisor = std::clamp(doc.settings.shadowDivisor, 1, 4);
+    const int shadowWidth = std::max(1, (width + divisor - 1) / divisor);
+    const int shadowHeight = std::max(1, (height + divisor - 1) / divisor);
     if (preview_.width == width && preview_.height == height &&
+        shadow_.width == shadowWidth && shadow_.height == shadowHeight &&
         height_.texture != 0 && normal_.texture != 0 && preview_.texture != 0 &&
         shadow_.texture[0] != 0 && blur_.texture[0] != 0) {
         return true;
@@ -271,8 +275,6 @@ bool Renderer::ensureTargets(const core::Document& doc, int width, int height,
         return false;
     }
 
-    const int shadowWidth = std::max(1, (width + 1) / 2);
-    const int shadowHeight = std::max(1, (height + 1) / 2);
     if (!createMrtTarget(shadow_, GL_RGBA8, shadowWidth, shadowHeight) ||
         !createMrtTarget(blur_, GL_RGBA8, shadowWidth, shadowHeight)) {
         if (error) *error = "Failed to create shadow render targets.";
@@ -401,8 +403,11 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     shadowShader_.setFloat("uAmplitude", amplitude);
     shadowShader_.setFloat("uBias", doc.settings.bias);
     shadowShader_.setFloat("uSoftness", doc.settings.softness);
-    shadowShader_.setInt("uSteps", 48);
-    shadowShader_.setInt("uSamples", doc.settings.softness > 0.005f ? 2 : 1);
+    shadowShader_.setInt("uSteps", std::clamp(doc.settings.shadowSteps, 16, 192));
+    shadowShader_.setInt(
+        "uSamples", doc.settings.softness > 0.005f
+                        ? std::clamp(doc.settings.shadowSamples, 1, 8)
+                        : 1);
     shadowShader_.setInt("uShadowsEnabled", doc.settings.shadows ? 1 : 0);
     bindLights(shadowShader_, doc);
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -556,6 +561,10 @@ std::size_t Renderer::stateHash(const core::Document& doc) {
     addFloat(doc.settings.depthMin);
     addFloat(doc.settings.depthMax);
     addInt(doc.settings.autoDepthRange ? 1 : 0);
+    addInt(doc.settings.shadowSteps);
+    addInt(doc.settings.shadowSamples);
+    addInt(doc.settings.shadowDivisor);
+    addInt(doc.settings.previewLongEdge);
 
     seed = combine(seed, doc.lights.size());
     for (const core::Light& light : doc.lights) {

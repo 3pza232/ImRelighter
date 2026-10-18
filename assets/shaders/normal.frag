@@ -16,11 +16,12 @@ float heightAt(vec2 uv) {
 }
 
 void main() {
+    const vec2 texel = 1.0 / max(uImageSize, vec2(1.0));
     float c = heightAt(vUv);
-    float l = heightAt(vUv - vec2(uTexel.x, 0.0));
-    float r = heightAt(vUv + vec2(uTexel.x, 0.0));
-    float b = heightAt(vUv - vec2(0.0, uTexel.y));
-    float u = heightAt(vUv + vec2(0.0, uTexel.y));
+    float l = heightAt(vUv - vec2(texel.x, 0.0));
+    float r = heightAt(vUv + vec2(texel.x, 0.0));
+    float b = heightAt(vUv - vec2(0.0, texel.y));
+    float u = heightAt(vUv + vec2(0.0, texel.y));
 
     float limit = 0.055 * max(uAmplitude, 0.001);
     float dx = (abs(r - c) < limit && abs(c - l) < limit)
@@ -33,10 +34,11 @@ void main() {
     if (min(abs(r - c), abs(l - c)) > limit) dx = 0.0;
     if (min(abs(u - c), abs(b - c)) > limit) dy = 0.0;
 
-    // Slope scale follows the actual render target, so preview and
-    // full-resolution export produce the same normals.
-    const float slopeScale = 0.5 / max(uTexel.y, 1e-6);
-    vec3 n = normalize(vec3(-dx * slopeScale, dy * slopeScale, 1.0));
+    // Gradients are sampled in source-image UV space, matching the reference
+    // pipeline at both preview and export resolutions.
+    vec3 n = normalize(vec3(-dx * uImageSize.y * 0.5,
+                            dy * uImageSize.y * 0.5,
+                            1.0));
     n.xy *= uNormalStrength;
     n *= uFlips;
     n = normalize(n);

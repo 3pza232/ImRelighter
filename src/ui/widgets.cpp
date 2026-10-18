@@ -131,6 +131,27 @@ bool vector3Control(const char* id, float values[3], const float mins[3],
     return changed;
 }
 
+Card::Card(const char* id, float padding, const ImVec4& background,
+           bool border, float indent) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, background);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+    if (indent > 0.0f) {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
+    }
+    ImGuiChildFlags flags = ImGuiChildFlags_AutoResizeY |
+                            ImGuiChildFlags_AlwaysUseWindowPadding;
+    if (border) flags |= ImGuiChildFlags_Borders;
+    indent_ = indent;
+    open_ = ImGui::BeginChild(id, ImVec2(0.0f, 0.0f), flags);
+    if (open_ && indent_ > 0.0f) ImGui::Indent(indent_);
+}
+
+Card::~Card() {
+    if (indent_ > 0.0f) ImGui::Unindent(indent_);
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
 Box::Box(const char* id, const ImVec2& size, float padding, bool border)
     : panel_(id, size, padding, border) {}
 

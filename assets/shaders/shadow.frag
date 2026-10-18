@@ -25,11 +25,11 @@ vec2 worldToUv(vec2 p) {
 
 float visibility(vec2 baseUv, vec3 p, vec3 lightPosition, int lightIndex) {
     float result = 0.0;
-    int samples = clamp(uSamples, 1, 4);
+    int samples = clamp(uSamples, 1, 8);
     float goldenAngle = 2.39996323;
     float radius = max(uSoftness, 0.0) * 0.55;
 
-    for (int sampleIndex = 0; sampleIndex < 4; ++sampleIndex) {
+    for (int sampleIndex = 0; sampleIndex < 8; ++sampleIndex) {
         if (sampleIndex >= samples) break;
         float angle = float(sampleIndex) * goldenAngle + float(lightIndex) * 0.7;
         float r = radius * sqrt(float(sampleIndex + 1) / float(samples));
@@ -37,7 +37,7 @@ float visibility(vec2 baseUv, vec3 p, vec3 lightPosition, int lightIndex) {
         vec3 delta = target - p;
 
         float visible = 1.0;
-        for (int stepIndex = 1; stepIndex <= 96; ++stepIndex) {
+        for (int stepIndex = 1; stepIndex <= 192; ++stepIndex) {
             if (stepIndex > uSteps) break;
             float t = float(stepIndex) / float(max(uSteps, 1));
             vec3 q = p + delta * t;
