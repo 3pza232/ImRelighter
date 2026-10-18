@@ -235,6 +235,38 @@ void testNormalSlopeClamp(gpu::Renderer& renderer) {
           "normal slope is clamped at depth discontinuities");
 }
 
+void testNormalVerticalOrientation(gpu::Renderer& renderer) {
+    core::Document doc;
+    doc.id = 102;
+    doc.width = 64;
+    doc.height = 64;
+    doc.hasDepth = true;
+    doc.color.assign(static_cast<size_t>(doc.width) * doc.height * 4, 180);
+    doc.depth.resize(static_cast<size_t>(doc.width) * doc.height);
+    for (int y = 0; y < doc.height; ++y) {
+        const int sourceY = doc.height - 1 - y;
+        const float value =
+            static_cast<float>(y) / static_cast<float>(doc.height - 1);
+        for (int x = 0; x < doc.width; ++x) {
+            doc.depth[static_cast<size_t>(sourceY) * doc.width + x] = value;
+        }
+    }
+    doc.settings.height = 1.0f;
+    doc.settings.smooth = 0.0f;
+    doc.settings.normalStrength = 1.0f;
+    doc.settings.detail = 0.0f;
+    doc.settings.rim = 0.0f;
+    doc.settings.specular = 0.0f;
+    doc.lights.clear();
+
+    const auto image = render(renderer, doc, core::View::Normal);
+    if (image.empty()) return;
+    const size_t i =
+        (static_cast<size_t>(doc.height / 2) * doc.width + doc.width / 2) * 4;
+    check(image[i + 1] > 140,
+          "normal orientation follows top-down vUv, not gl_FragCoord");
+}
+
 void testNormalEdgeWidth(gpu::Renderer& renderer) {
     core::Document doc;
     doc.id = 101;
@@ -416,6 +448,7 @@ int main() {
     testDepthOrientation(renderer);
     testDepthSmoothing(renderer);
     testNormalSlopeClamp(renderer);
+    testNormalVerticalOrientation(renderer);
     testNormalEdgeWidth(renderer);
     testDetailOrientation(renderer);
     testNormalFlip(renderer);

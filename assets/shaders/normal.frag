@@ -32,23 +32,22 @@ void main() {
     // footprint in output pixels. uPixelScale converts the preview gradient
     // back to source-image pixels for a resolution-independent slope.
     vec2 texel = uTexel;
-    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    // vUv is top-down in this pass. gl_FragCoord.y is bottom-up, so using it
+    // here would sample the height texture upside down and mirror the normals.
+    ivec2 size = textureSize(uHeight, 0);
+    ivec2 pixel = clamp(ivec2(floor(vUv * vec2(size))),
+                        ivec2(0), size - 1);
     float c = heightAt(pixel);
     float l = heightAt(pixel - ivec2(1, 0));
     float r = heightAt(pixel + ivec2(1, 0));
     float b = heightAt(pixel - ivec2(0, 1));
     float u = heightAt(pixel + ivec2(0, 1));
 
-    float limit = 0.055 * max(uAmplitude, 0.001);
-    float dx = (abs(r - c) < limit && abs(c - l) < limit)
-                   ? (r - l) * 0.5
-                   : (abs(r - c) < abs(c - l) ? r - c : c - l);
-    float dy = (abs(u - c) < limit && abs(c - b) < limit)
-                   ? (u - b) * 0.5
-                   : (abs(u - c) < abs(c - b) ? u - c : c - b);
-
-    if (min(abs(r - c), abs(l - c)) > limit) dx = 0.0;
-    if (min(abs(u - c), abs(b - c)) > limit) dy = 0.0;
+    // Central differences are deliberate. Switching to one-sided differences
+    // around noisy model edges flips the gradient between adjacent pixels and
+    // shows up as alternating red/green speckles in the normal view.
+    float dx = (r - l) * 0.5;
+    float dy = (u - b) * 0.5;
 
     float jump = max(max(abs(r - c), abs(l - c)),
                      max(abs(u - c), abs(b - c)));
