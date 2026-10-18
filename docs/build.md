@@ -5,7 +5,6 @@
 - Windows x64
 - MinGW-w64 GCC 13.x
 - CMake 3.26+（`copy_directory_if_different` 需要 3.26）
-- Ninja
 - OpenGL 4.5 驱动
 
 ## 命令
