@@ -2,9 +2,9 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的结构，版本号与 `CMakeLists.txt` 保持一致。
 
-## [0.2.1] - 2026-10-19
+## [0.3.0] - 2026-10-19
 
-像素上限、物理光照与材质着色修复版本。
+物理光照、材质着色与像素上限版本。
 
 ### Added
 

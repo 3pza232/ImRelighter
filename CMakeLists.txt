@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(ImRelighter VERSION 0.2.1 LANGUAGES C CXX)
+project(ImRelighter VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
