@@ -106,6 +106,7 @@
   "settings.resources": "Resources",
   "settings.max_tasks": "Task Limit",
   "settings.memory_limit": "Memory Limit (GB)",
+    "settings.image_limit": "Image Pixel Limit",
   "settings.auto": "Auto",
   "settings.cpu": "CPU",
   "settings.dml": "DirectML",

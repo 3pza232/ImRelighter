@@ -164,6 +164,24 @@ void drawSettings(app::App& app) {
                     app.setResourceLimits(app.config.maxTasks,
                                           app.config.memoryLimitGb);
                 }
+                formLabel(app.tr("settings.image_limit").c_str(),
+                          scaled(kSettingsLabelWidth));
+                float imageMegapixels =
+                    static_cast<float>(app.config.maxImageMegapixels);
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::SliderFloat(
+                        "##image_limit", &imageMegapixels, 4.0f, 100.0f,
+                        "%.0f MP", ImGuiSliderFlags_AlwaysClamp)) {
+                    const int value = std::clamp(
+                        static_cast<int>(std::lround(imageMegapixels)), 4,
+                        100);
+                    imageMegapixels = static_cast<float>(value);
+                    app.setImageMegapixelLimit(value, false);
+                }
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    app.setImageMegapixelLimit(
+                        app.config.maxImageMegapixels);
+                }
                 ImGui::PopStyleVar();
 
                 ImGui::EndTabItem();

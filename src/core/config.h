@@ -17,6 +17,7 @@ struct UserConfig {
     bool modelSelectionCleared = false;
     int maxTasks = 100;
     int memoryLimitGb = 4;
+    int maxImageMegapixels = 10;
 };
 
 bool loadUserConfig(UserConfig& config, std::string* error = nullptr);

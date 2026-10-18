@@ -50,7 +50,7 @@ src/
   io/
     image_io.cpp / .h            图片解码入口
     image_probe.cpp / .h         PNG/JPEG 头尺寸探测
-    image_limits.h               24 MP 上限
+    image_limits.h               像素上限（默认 10 MP）
     exif.cpp / .h                JPEG EXIF 方向
     webp_decoder.cpp / .h        动态加载 libwebp
     png_export.cpp / .h          RGBA8 / 16 位 PNG
@@ -86,7 +86,7 @@ src/
   → io::loadImage
       → 扩展名判断
       → JPEG: 读取 EXIF Orientation
-      → io::probeImageDimensions（解码前 24 MP 检查）
+      → io::probeImageDimensions（解码前像素上限检查，默认 10 MP）
       → stb / libwebp 解码为 top-down RGBA8
       → 应用 EXIF 1~8 方向变换
       → 解码后再次检查像素上限
@@ -162,7 +162,7 @@ Renderer 全分辨率渲染 → glReadPixels RGBA8
 - **路径**：内部统一 `std::filesystem::path`；与 ImGui/对话框交互时使用 UTF-8。字体与图标通过内存加载，支持中文和空格路径。
 - **配置**：`config.json` 写入 exe 同级目录；先写临时文件再原子替换，失败会显示状态栏错误。
 - **i18n**：所有 UI 文案来自 `assets/i18n/*.json`；新增键必须同步中英文，`tests/check_i18n_keys.py` 检查未使用键。
-- **资源上限**：单图 24 MP；任务数默认 100（最大 500）；内存默认 4 GB（最大 16 GB）。
+- **资源上限**：单图默认 10 MP，可在设置中调整为 4–100 MP；任务数默认 100（最大 500）；内存默认 4 GB（最大 16 GB）。
 
 ## 扩展指南
 
@@ -184,5 +184,5 @@ Renderer 全分辨率渲染 → glReadPixels RGBA8
 
 1. 在 `io::loadImage` 中识别扩展名并探测尺寸。
 2. 解码为 top-down RGBA8，必要时应用方向信息。
-3. 复用 `exceedsPixelLimit`，不要绕过 24 MP 上限。
+3. 复用 `exceedsPixelLimit`，不要绕过可配置的像素上限。
 4. 增加 round-trip 或最小样本测试。

@@ -9,7 +9,7 @@
 ### Added
 
 - JPEG EXIF Orientation 支持，手机照片按拍摄方向显示。
-- 解码前图片尺寸探测与统一的 24 MP 上限。
+- 解码前图片尺寸探测与统一的像素上限（默认 10 MP，可在设置中调整 4–100 MP）。
 - 深度平滑回归测试、法线斜率上限回归、FP16 边界/往返测试、PNG round-trip、EXIF 8 方向、模型元数据、配置 round-trip 与图像头探测测试。
 - 未使用 i18n 键检查脚本与 GitHub Actions Windows CI。
 - `.editorconfig`、`.clang-format`、架构文档、限制说明、CHANGELOG 与界面截图。
@@ -22,6 +22,7 @@
 
 ### Changed
 
+- 图片像素上限默认从 24 MP 调整为 10 MP，并可在设置中按 4–100 MP 调整。
 - `App` 拆分出 `DocumentStore`、`ModelManager`、`ExportService`；移除 `UiState` 影子设置。
 - `Renderer` 拆分为 Depth / Normal / Shadow / Blur / Lighting Pass，渲染状态哈希集中维护。
 - `ui.cpp` 拆分为 topbar / sidebar / canvas / inspector / settings / status / export 等翻译单元。

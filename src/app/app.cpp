@@ -22,6 +22,7 @@
 
 #include <shellapi.h>
 
+#include "io/image_limits.h"
 #include "io/image_io.h"
 #include "io/native_dialog.h"
 #include "io/paths.h"
@@ -476,6 +477,8 @@ uint64_t App::addDocument(const std::filesystem::path& path, std::string* error)
     DocumentStore::Limits limits;
     limits.maxTasks = config.maxTasks;
     limits.memoryGb = config.memoryLimitGb;
+    limits.maxImagePixels =
+        io::megapixelsToPixels(config.maxImageMegapixels);
     limits.taskLimitMessage = tr("document.limit");
     limits.memoryLimitMessage = tr("document.memory");
     limits.thumbnailFailedMessage = tr("document.thumbnail_failed");
@@ -625,6 +628,13 @@ void App::setTheme(core::Theme value) {
 void App::setResourceLimits(int maxTasks, int memoryLimitGb, bool persist) {
     config.maxTasks = std::clamp(maxTasks, 1, 500);
     config.memoryLimitGb = std::clamp(memoryLimitGb, 1, 16);
+    if (persist) saveConfig();
+}
+
+void App::setImageMegapixelLimit(int megapixels, bool persist) {
+    config.maxImageMegapixels =
+        std::clamp(megapixels, io::kMinImageMegapixels,
+                   io::kMaxImageMegapixels);
     if (persist) saveConfig();
 }
 

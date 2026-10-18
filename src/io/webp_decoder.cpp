@@ -57,7 +57,8 @@ WebPApi& api() {
 } // namespace
 
 bool decodeWebp(const uint8_t* bytes, size_t size, int& width, int& height,
-                std::vector<uint8_t>& rgba, std::string* error) {
+                std::vector<uint8_t>& rgba, std::string* error,
+                std::int64_t maxPixels) {
     const WebPApi& webp = api();
     if (!webp.ready()) {
         if (error) *error = "libwebp.dll is missing or incompatible.";
@@ -75,8 +76,11 @@ bool decodeWebp(const uint8_t* bytes, size_t size, int& width, int& height,
         if (error) *error = "Invalid WebP image.";
         return false;
     }
-    if (exceedsPixelLimit(headerWidth, headerHeight)) {
-        if (error) *error = "Image is larger than the 24 megapixel limit.";
+    if (exceedsPixelLimit(headerWidth, headerHeight, maxPixels)) {
+        if (error) {
+            *error =
+                pixelLimitMessage(headerWidth, headerHeight, maxPixels);
+        }
         return false;
     }
 

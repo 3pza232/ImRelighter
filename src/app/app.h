@@ -48,6 +48,7 @@ public:
     void setBackend(core::Backend backend);
     void setTheme(core::Theme theme);
     void setResourceLimits(int maxTasks, int memoryLimitGb, bool persist = true);
+    void setImageMegapixelLimit(int megapixels, bool persist = true);
     void resetTask();
 
     bool hasTask() const;

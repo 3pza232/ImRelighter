@@ -434,6 +434,13 @@ void testImageProbe() {
           "oversized PNG header probe succeeds");
     check(io::exceedsPixelLimit(width, height),
           "oversized header is rejected by the pixel limit");
+    check(io::kDefaultImageMegapixels == 10,
+          "default image limit is 10 megapixels");
+    check(!io::exceedsPixelLimit(3000, 3000),
+          "default limit accepts a 9 megapixel image");
+    check(io::exceedsPixelLimit(3000, 3000,
+                                io::megapixelsToPixels(8)),
+          "custom limit rejects an image above its budget");
 
     check(!io::probeImageDimensions(nullptr, 0, width, height),
           "empty header probe is rejected");
@@ -572,6 +579,7 @@ void testConfigRoundTrip() {
     config.modelSelectionCleared = true;
     config.maxTasks = 7;
     config.memoryLimitGb = 9;
+    config.maxImageMegapixels = 17;
 
     std::string error;
     check(core::saveUserConfigTo(path, config, &error),
@@ -587,7 +595,8 @@ void testConfigRoundTrip() {
               loaded.theme == core::Theme::Light &&
               loaded.modelFile == config.modelFile &&
               loaded.modelSelectionCleared && loaded.maxTasks == 7 &&
-              loaded.memoryLimitGb == 9,
+              loaded.memoryLimitGb == 9 &&
+              loaded.maxImageMegapixels == 17,
           "config round-trip preserves values");
 
     {

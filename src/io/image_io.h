@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "io/image_limits.h"
+
 namespace io {
 
 struct ImageData {
@@ -14,8 +16,10 @@ struct ImageData {
     std::vector<uint8_t> rgba; // top-down
 };
 
-std::optional<ImageData> loadImage(const std::filesystem::path& path,
-                                   std::string* error = nullptr);
+std::optional<ImageData> loadImage(
+    const std::filesystem::path& path, std::string* error = nullptr,
+    std::int64_t maxPixels =
+        megapixelsToPixels(kDefaultImageMegapixels));
 
 bool makeThumbnail(const ImageData& image, int maxSize, std::vector<uint8_t>& out,
                    int& thumbWidth, int& thumbHeight);

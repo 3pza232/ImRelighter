@@ -78,8 +78,15 @@ bool loadUserConfigFrom(const std::filesystem::path& path, UserConfig& config,
             json["memoryLimitGb"].is_number_integer()) {
             config.memoryLimitGb = json["memoryLimitGb"].get<int>();
         }
+        if (json.contains("maxImageMegapixels") &&
+            json["maxImageMegapixels"].is_number_integer()) {
+            config.maxImageMegapixels =
+                json["maxImageMegapixels"].get<int>();
+        }
         config.maxTasks = std::clamp(config.maxTasks, 1, 500);
         config.memoryLimitGb = std::clamp(config.memoryLimitGb, 1, 16);
+        config.maxImageMegapixels =
+            std::clamp(config.maxImageMegapixels, 4, 100);
         return true;
     } catch (const std::exception& e) {
         if (error) *error = std::string("Failed to read config: ") + e.what();
@@ -104,6 +111,8 @@ bool saveUserConfigTo(const std::filesystem::path& path,
         if (config.modelSelectionCleared) json["modelSelectionCleared"] = true;
         json["maxTasks"] = std::clamp(config.maxTasks, 1, 500);
         json["memoryLimitGb"] = std::clamp(config.memoryLimitGb, 1, 16);
+        json["maxImageMegapixels"] =
+            std::clamp(config.maxImageMegapixels, 4, 100);
 
         auto temporary = path;
         temporary += L".tmp";

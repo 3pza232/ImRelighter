@@ -15,7 +15,8 @@
 namespace io {
 
 std::optional<ImageData> loadImage(const std::filesystem::path& path,
-                                   std::string* error) {
+                                   std::string* error,
+                                   std::int64_t maxPixels) {
     std::ifstream stream(path, std::ios::binary | std::ios::ate);
     if (!stream) {
         if (error) *error = "Cannot open image file: " + path.string();
@@ -47,15 +48,17 @@ std::optional<ImageData> loadImage(const std::filesystem::path& path,
     int headerHeight = 0;
     if (probeImageDimensions(bytes.data(), bytes.size(), headerWidth,
                              headerHeight) &&
-        exceedsPixelLimit(headerWidth, headerHeight)) {
-        if (error) *error = "Image is larger than the 24 megapixel limit.";
+        exceedsPixelLimit(headerWidth, headerHeight, maxPixels)) {
+        if (error) {
+            *error = pixelLimitMessage(headerWidth, headerHeight, maxPixels);
+        }
         return std::nullopt;
     }
 
     ImageData result;
     if (extension == ".webp") {
         if (!decodeWebp(bytes.data(), bytes.size(), result.width, result.height,
-                        result.rgba, error)) {
+                        result.rgba, error, maxPixels)) {
             return std::nullopt;
         }
         return result;
@@ -75,9 +78,10 @@ std::optional<ImageData> loadImage(const std::filesystem::path& path,
         return std::nullopt;
     }
 
-    if (width <= 0 || height <= 0 || exceedsPixelLimit(width, height)) {
+    if (width <= 0 || height <= 0 ||
+        exceedsPixelLimit(width, height, maxPixels)) {
         stbi_image_free(pixels);
-        if (error) *error = "Image is larger than the 24 megapixel limit.";
+        if (error) *error = pixelLimitMessage(width, height, maxPixels);
         return std::nullopt;
     }
 

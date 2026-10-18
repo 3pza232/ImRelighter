@@ -18,7 +18,7 @@ std::uint64_t DocumentStore::add(const std::filesystem::path& path,
         return 0;
     }
 
-    auto image = io::loadImage(path, error);
+    auto image = io::loadImage(path, error, limits.maxImagePixels);
     if (!image) return 0;
 
     std::uint64_t used = 0;

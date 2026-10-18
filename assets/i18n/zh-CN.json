@@ -106,6 +106,7 @@
   "settings.resources": "资源",
   "settings.max_tasks": "任务数量上限",
   "settings.memory_limit": "内存上限 (GB)",
+    "settings.image_limit": "图片像素上限",
   "settings.auto": "自动",
   "settings.cpu": "CPU",
   "settings.dml": "DirectML",

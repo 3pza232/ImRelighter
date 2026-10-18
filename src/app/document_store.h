@@ -19,6 +19,7 @@ public:
     struct Limits {
         int maxTasks = 8;
         int memoryGb = 4;
+        std::int64_t maxImagePixels = 10'000'000;
         std::string taskLimitMessage;
         std::string memoryLimitMessage;
         std::string thumbnailFailedMessage;
