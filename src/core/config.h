@@ -18,6 +18,11 @@ struct UserConfig {
     int maxTasks = 100;
     int memoryLimitGb = 4;
     int maxImageMegapixels = 30;
+
+    // Original JSON kept so fields unknown to this build survive a save. It
+    // makes schema additions/removals forward-compatible without a migration
+    // step that rewrites the whole file.
+    std::string rawJson;
 };
 
 bool loadUserConfig(UserConfig& config, std::string* error = nullptr);

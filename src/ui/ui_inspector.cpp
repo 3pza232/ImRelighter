@@ -83,6 +83,39 @@ bool colorRow(app::App& app, const char* labelKey, std::string& color) {
     return changed;
 }
 
+void applyMaterialPreset(core::Document& doc, int preset) {
+    core::Settings& settings = doc.settings;
+    settings.materialRoughness = 0.30f;
+    settings.metalness = 0.0f;
+    settings.sheen = 0.0f;
+    settings.subsurface = 0.0f;
+    settings.specular = 0.04f;
+    settings.shininess = 60.0f;
+
+    if (preset == 1) { // skin
+        settings.materialRoughness = 0.55f;
+        settings.subsurface = 0.35f;
+        settings.specular = 0.03f;
+        settings.shininess = 35.0f;
+    } else if (preset == 2) { // fabric
+        settings.materialRoughness = 0.82f;
+        settings.sheen = 0.35f;
+        settings.specular = 0.02f;
+        settings.shininess = 20.0f;
+    } else if (preset == 3) { // hair
+        settings.materialRoughness = 0.42f;
+        settings.sheen = 0.18f;
+        settings.subsurface = 0.05f;
+        settings.specular = 0.05f;
+        settings.shininess = 70.0f;
+    } else if (preset == 4) { // metal
+        settings.materialRoughness = 0.22f;
+        settings.metalness = 0.85f;
+        settings.specular = 0.08f;
+        settings.shininess = 120.0f;
+    }
+}
+
 void applyRenderPreset(app::App& app, int preset) {
     core::Document* doc = app.activeDocument();
     if (!doc) return;
@@ -236,6 +269,11 @@ void drawLightSection(app::App& app) {
 
     ImGui::SeparatorText(app.tr("section.light_list").c_str());
     ImGui::TextDisabled("%d / 8", static_cast<int>(doc->lights.size()));
+    if (doc->soloLight != 0) {
+        ImGui::SameLine();
+        ImGui::TextColored(theme::accent, "%s %d",
+                           app.tr("light.solo").c_str(), doc->soloLight);
+    }
     ImGui::Spacing();
 
     for (auto& light : doc->lights) {
@@ -248,12 +286,62 @@ void drawLightSection(app::App& app) {
         std::string label =
             app.tr("light.name") + " " + std::to_string(light.id);
         if (!light.enabled) label += " · " + app.tr("light.off");
+        if (doc->soloLight == light.id) label += " · " + app.tr("light.solo");
         if (ImGui::Selectable(label.c_str(),
                               doc->selectedLight == light.id)) {
             doc->selectedLight = light.id;
         }
         if (!light.enabled) ImGui::PopStyleVar();
         ImGui::PopID();
+    }
+
+    ImGui::Spacing();
+    ImGui::TextUnformatted(app.tr("light.preset").c_str());
+    const float lightPresetGap = scaled(4.0f);
+    const float lightPresetWidth =
+        (ImGui::GetContentRegionAvail().x - 2.0f * lightPresetGap) / 3.0f;
+    if (ImGui::Button(app.tr("light.preset_three").c_str(),
+                      ImVec2(lightPresetWidth, 0.0f))) {
+        doc->lights = {
+            core::makeLight(1, {-1.35f, 1.15f, 1.8f}),
+            core::makeLight(2, {1.45f, 0.25f, 1.5f}),
+            core::makeLight(3, {0.25f, 0.85f, 1.9f}),
+        };
+        doc->lights[0].color = "#ffe3c4";
+        doc->lights[0].intensity = 2.2f;
+        doc->lights[1].color = "#c8d8ff";
+        doc->lights[1].intensity = 1.1f;
+        doc->lights[2].color = "#ffffff";
+        doc->lights[2].type = core::LightType::Spot;
+        doc->lights[2].spotAngle = 48.0f;
+        doc->lights[2].intensity = 1.8f;
+        doc->selectedLight = 1;
+        doc->soloLight = 0;
+    }
+    ImGui::SameLine(0.0f, lightPresetGap);
+    if (ImGui::Button(app.tr("light.preset_window").c_str(),
+                      ImVec2(lightPresetWidth, 0.0f))) {
+        doc->lights = {core::makeLight(1, {-0.8f, 0.7f, 2.2f})};
+        doc->lights[0].color = "#e8f0ff";
+        doc->lights[0].intensity = 2.4f;
+        doc->lights[0].range = 6.0f;
+        doc->selectedLight = 1;
+        doc->soloLight = 0;
+    }
+    ImGui::SameLine(0.0f, lightPresetGap);
+    if (ImGui::Button(app.tr("light.preset_rim").c_str(),
+                      ImVec2(lightPresetWidth, 0.0f))) {
+        doc->lights = {
+            core::makeLight(1, {-0.45f, 0.45f, 2.0f}),
+            core::makeLight(2, {0.5f, 0.8f, -1.6f}),
+        };
+        doc->lights[0].color = "#ffe6c8";
+        doc->lights[0].intensity = 1.8f;
+        doc->lights[1].color = "#cfe4ff";
+        doc->lights[1].intensity = 2.6f;
+        doc->lights[1].range = 4.5f;
+        doc->selectedLight = 1;
+        doc->soloLight = 0;
     }
 
     ImGui::Spacing();
@@ -270,12 +358,14 @@ void drawLightSection(app::App& app) {
     ImGui::SameLine();
     ImGui::BeginDisabled(doc->lights.size() <= 1);
     if (ImGui::Button(app.tr("light.delete").c_str())) {
+        const int removedId = doc->selectedLight;
         doc->lights.erase(
             std::remove_if(doc->lights.begin(), doc->lights.end(),
                            [&](const core::Light& light) {
-                               return light.id == doc->selectedLight;
+                               return light.id == removedId;
                            }),
             doc->lights.end());
+        if (doc->soloLight == removedId) doc->soloLight = 0;
         if (!doc->lights.empty()) {
             doc->selectedLight = doc->lights.front().id;
         }
@@ -293,6 +383,33 @@ void drawLightSection(app::App& app) {
                 light.enabled = !light.enabled;
             }
         }
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(doc->lights.size() >= 8);
+    if (ImGui::Button(app.tr("light.duplicate").c_str())) {
+        auto source = std::find_if(
+            doc->lights.begin(), doc->lights.end(),
+            [&](const core::Light& light) {
+                return light.id == doc->selectedLight;
+            });
+        if (source != doc->lights.end()) {
+            int nextId = 1;
+            for (const auto& light : doc->lights) {
+                nextId = std::max(nextId, light.id + 1);
+            }
+            core::Light copy = *source;
+            copy.id = nextId;
+            copy.position[0] += 0.25f;
+            copy.position[1] += 0.15f;
+            doc->lights.push_back(copy);
+            doc->selectedLight = nextId;
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(app.tr("light.solo").c_str())) {
+        doc->soloLight =
+            doc->soloLight == doc->selectedLight ? 0 : doc->selectedLight;
     }
 
     auto selected = std::find_if(doc->lights.begin(), doc->lights.end(),
@@ -324,6 +441,27 @@ void drawLightSection(app::App& app) {
         sliderRow(app, "light.intensity", selected->intensity, 0.0f, 12.0f,
                   "%.2f");
         sliderRow(app, "light.range", selected->range, 0.2f, 12.0f, "%.2f");
+
+        ImGui::TextUnformatted(app.tr("light.type").c_str());
+        const float typeWidth =
+            (ImGui::GetContentRegionAvail().x - scaled(4.0f)) / 2.0f;
+        if (segmentButton(app.tr("light.point").c_str(),
+                          selected->type == core::LightType::Point,
+                          ImVec2(typeWidth, 0.0f))) {
+            selected->type = core::LightType::Point;
+        }
+        ImGui::SameLine(0.0f, scaled(4.0f));
+        if (segmentButton(app.tr("light.spot").c_str(),
+                          selected->type == core::LightType::Spot,
+                          ImVec2(typeWidth, 0.0f))) {
+            selected->type = core::LightType::Spot;
+        }
+        if (selected->type == core::LightType::Spot) {
+            sliderRow(app, "light.spot_angle", selected->spotAngle, 5.0f,
+                      120.0f, "%.0f°");
+            sliderRow(app, "light.spot_softness", selected->spotSoftness, 0.0f,
+                      1.0f, "%.2f");
+        }
     }
 
     ImGui::Spacing();
@@ -410,6 +548,24 @@ void drawSurfaceSection(app::App& app) {
     core::Document* doc = app.activeDocument();
     if (!doc) doc = &fallback;
 
+    const float lookGap = scaled(4.0f);
+    const float lookWidth =
+        (ImGui::GetContentRegionAvail().x - lookGap) / 2.0f;
+    ImGui::PushID("look_clipboard");
+    if (ImGui::Button(app.tr("look.copy").c_str(),
+                      ImVec2(lookWidth, 0.0f))) {
+        app.copyLook();
+    }
+    ImGui::SameLine(0.0f, lookGap);
+    ImGui::BeginDisabled(!app.hasLookClipboard());
+    if (ImGui::Button(app.tr("look.paste").c_str(),
+                      ImVec2(lookWidth, 0.0f))) {
+        app.pasteLook();
+    }
+    ImGui::EndDisabled();
+    ImGui::PopID();
+
+    ImGui::Spacing();
     ImGui::SeparatorText(app.tr("surface.render_preset").c_str());
     // "电影" and "经典" also appear in the tone-map and lighting-model rows;
     // scope each group so the shared labels get distinct ImGui IDs.
@@ -488,6 +644,32 @@ void drawSurfaceSection(app::App& app) {
               "%.2f");
     checkboxRow(app, "surface.line_assist", doc->settings.lineAssist);
     checkboxRow(app, "surface.invert", doc->settings.invert);
+
+    ImGui::Spacing();
+    ImGui::SeparatorText(app.tr("material.title").c_str());
+    ImGui::TextUnformatted(app.tr("material.preset").c_str());
+    ImGui::PushID("material_preset");
+    const float materialGap = scaled(3.0f);
+    const float materialWidth =
+        (ImGui::GetContentRegionAvail().x - 4.0f * materialGap) / 5.0f;
+    const char* materialKeys[] = {"material.default", "material.skin",
+                                  "material.fabric", "material.hair",
+                                  "material.metal"};
+    for (int i = 0; i < 5; ++i) {
+        if (i > 0) ImGui::SameLine(0.0f, materialGap);
+        if (segmentButton(app.tr(materialKeys[i]).c_str(), false,
+                          ImVec2(materialWidth, 0.0f))) {
+            applyMaterialPreset(*doc, i);
+        }
+    }
+    ImGui::PopID();
+    sliderRow(app, "material.roughness", doc->settings.materialRoughness, 0.05f,
+              1.0f, "%.2f");
+    sliderRow(app, "material.metalness", doc->settings.metalness, 0.0f, 1.0f,
+              "%.2f");
+    sliderRow(app, "material.sheen", doc->settings.sheen, 0.0f, 1.0f, "%.2f");
+    sliderRow(app, "material.subsurface", doc->settings.subsurface, 0.0f, 1.0f,
+              "%.2f");
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.composite").c_str());

@@ -28,6 +28,7 @@ struct Document {
     Settings settings;
     std::vector<Light> lights{makeLight(1)};
     int selectedLight = 1;
+    int soloLight = 0; // 0 = no solo, otherwise the light id
     bool animate = false;
     View view = View::Original;
 

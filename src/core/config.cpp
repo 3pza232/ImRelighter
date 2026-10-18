@@ -87,6 +87,7 @@ bool loadUserConfigFrom(const std::filesystem::path& path, UserConfig& config,
         config.memoryLimitGb = std::clamp(config.memoryLimitGb, 1, 16);
         config.maxImageMegapixels =
             std::clamp(config.maxImageMegapixels, 4, 200);
+        config.rawJson = json.dump();
         return true;
     } catch (const std::exception& e) {
         if (error) *error = std::string("Failed to read config: ") + e.what();
@@ -101,7 +102,16 @@ bool saveUserConfig(const UserConfig& config, std::string* error) {
 bool saveUserConfigTo(const std::filesystem::path& path,
                       const UserConfig& config, std::string* error) {
     try {
-        nlohmann::json json;
+        nlohmann::json json = nlohmann::json::object();
+        if (!config.rawJson.empty()) {
+            try {
+                nlohmann::json preserved = nlohmann::json::parse(config.rawJson);
+                if (preserved.is_object()) json = std::move(preserved);
+            } catch (const std::exception&) {
+                // A stale or hand-edited raw snapshot must not block saving
+                // the current known fields.
+            }
+        }
         json["version"] = 1;
         json["language"] = I18n::code(config.language);
         json["backend"] = backendKey(config.backend);

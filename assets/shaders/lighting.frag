@@ -17,6 +17,10 @@ uniform float uWrap;
 uniform float uSpecular;
 uniform float uShininess;
 uniform float uRim;
+uniform float uMaterialRoughness;
+uniform float uMetalness;
+uniform float uSheen;
+uniform float uSubsurface;
 uniform float uExposure;
 uniform float uMix;
 uniform float uComparison;
@@ -33,6 +37,9 @@ uniform vec3 uLightColor[8];
 uniform float uLightIntensity[8];
 uniform float uLightRange[8];
 uniform int uLightEnabled[8];
+uniform int uLightType[8];
+uniform float uLightSpotCos[8];
+uniform float uLightSpotSoft[8];
 
 vec3 linearize(vec3 color) {
     return mix(color / 12.92,
@@ -152,7 +159,7 @@ void main() {
     float microU = sourceLuma(vUv + vec2(0.0, microStep.y));
     float microContrast =
         length(vec2(microR - microL, microU - microB));
-    float roughness = smoothstep(0.02, 0.14, microContrast);
+    float microRoughness = smoothstep(0.02, 0.14, microContrast);
 
     // A small depth-curvature term darkens creases where the low-resolution
     // depth map still carries reliable shape, adding contact without a
@@ -193,8 +200,21 @@ void main() {
         vec3 l = offset / distanceToLight;
         float attenuation = 1.0 / (1.0 + pow(distanceToLight /
                                               max(uLightRange[i], 0.01), 2.0));
+        // A spot cone is expressed around the vector from the light toward the
+        // document center. This keeps the control compact (position + angle)
+        // while still giving a genuinely directional falloff.
+        if (uLightType[i] == 1) {
+            vec3 spotDirection = normalize(-uLightPos[i] + vec3(1e-5));
+            float cone = dot(-l, spotDirection);
+            float inner = mix(uLightSpotCos[i], 1.0,
+                              clamp(uLightSpotSoft[i], 0.0, 1.0));
+            attenuation *= smoothstep(uLightSpotCos[i], inner, cone);
+        }
+
         float ndl = dot(n, l);
-        float diffuse = clamp((ndl + uWrap) / (1.0 + uWrap), 0.0, 1.0);
+        float wrapAmount = max(uWrap + uSubsurface, 0.0);
+        float diffuse =
+            clamp((ndl + wrapAmount) / (1.0 + wrapAmount), 0.0, 1.0);
 
         float vis = uShadowsEnabled != 0 ? visibility[i] : 1.0;
         vec3 radiance = uLightColor[i] * uLightIntensity[i] * attenuation;
@@ -203,36 +223,44 @@ void main() {
         vec3 halfVector = normalize(l + viewDir);
         float ndlPositive = max(ndl, 0.0);
         float rim = pow(1.0 - max(n.z, 0.0), 3.0) * ndlPositive * uRim;
+        vec3 dielectricF0 = vec3(0.04);
         if (uLightingModel == 0) {
             float shininess =
-                mix(uShininess, max(8.0, uShininess * 0.5), roughness);
-            float specular = uSpecular * mix(1.0, 0.35, roughness);
+                mix(uShininess, max(8.0, uShininess * 0.5), microRoughness);
+            shininess = mix(shininess, 8.0, uMaterialRoughness);
+            float specular = uSpecular * mix(1.0, 0.35, microRoughness);
             float shine =
                 pow(max(dot(specularNormal, halfVector), 0.0),
                     max(shininess, 1.0)) *
                 specular *
                 smoothstep(0.0, 0.15, dot(specularNormal, l));
             shine *= 1.0 - 0.6 * edgeMask;
-            direct += radiance * diffuse * vis;
-            highlights += radiance * shine * vis;
+            vec3 specTint = mix(vec3(1.0), base, uMetalness);
+            direct += radiance * diffuse * (1.0 - uMetalness) * vis;
+            highlights += radiance * shine * specTint * vis;
         } else {
             // A GGX lobe with Fresnel and Smith visibility replaces the broad
             // Blinn-Phong sheen that made fabric and hair look like leather.
             // A roughness floor keeps 1-pixel normal-map detail from turning
-            // into mirror-like fireflies on fabric and hair. The UI shininess
-            // still controls how broad the highlight is above that floor.
-            float baseRoughness =
-                clamp(sqrt(2.0 / max(uShininess + 2.0, 1.0)), 0.30, 1.0);
+            // into mirror-like fireflies on fabric and hair. Material
+            // roughness and metalness let the same depth map represent skin,
+            // cloth, hair or metal instead of one generic plastic surface.
+            // Material roughness is the PBR base. Shininess still shapes the
+            // classic Blinn-Phong highlight, while micro contrast adds local
+            // roughness on fabric and hair.
+            float baseRoughness = clamp(uMaterialRoughness, 0.05, 1.0);
             float rough = clamp(
-                mix(baseRoughness, min(baseRoughness + 0.4, 1.0), roughness),
-                0.30, 1.0);
+                mix(baseRoughness, min(baseRoughness + 0.4, 1.0),
+                    microRoughness),
+                0.05, 1.0);
             float ndv = max(dot(specularNormal, viewDir), 0.001);
             float ndh = max(dot(specularNormal, halfVector), 0.0);
             float vdh = max(dot(viewDir, halfVector), 0.0);
             float ndlSafe = max(dot(specularNormal, l), 0.001);
             float D = distributionGGX(ndh, rough);
             float G = geometrySmith(ndv, ndlSafe, rough);
-            vec3 F = fresnelSchlick(vdh, vec3(0.04));
+            vec3 F0 = mix(dielectricF0, base, clamp(uMetalness, 0.0, 1.0));
+            vec3 F = fresnelSchlick(vdh, F0);
             // A tiny denominator turns grazing micro-normals into isolated
             // white fireflies. Clamp the geometric term and the final specular
             // so a single normal-map texel cannot dominate the frame.
@@ -240,9 +268,13 @@ void main() {
                 (D * G * F) / max(4.0 * ndv * ndlSafe, 0.05);
             specularTerm = min(specularTerm, vec3(1.0));
             specularTerm *= (1.0 - 0.6 * edgeMask);
-            direct += radiance * diffuse * vis * (vec3(1.0) - F);
+            vec3 kD = (vec3(1.0) - F) * (1.0 - uMetalness);
+            direct += radiance * diffuse * kD * vis;
             highlights += radiance * specularTerm * uSpecular * vis;
         }
+        float sheen =
+            pow(1.0 - max(dot(n, viewDir), 0.0), 3.0) * uSheen;
+        highlights += radiance * sheen * 0.25 * vis * (1.0 - edgeMask);
         // Depth discontinuities are not real surface curvature. Fade the
         // additive highlights there to avoid colored halos on silhouettes.
         rim *= 1.0 - edgeMask;
@@ -254,6 +286,14 @@ void main() {
     vec3 result = base * illumination + highlights;
     if (uBaseMode == 0) {
         result = (base * illumination + highlights) / (uAmbient + 0.8);
+    }
+    // A small warm scatter term makes skin/hair subsurface control visible
+    // without introducing a separate transmission pass.
+    float scatterAmount = clamp(uSubsurface, 0.0, 1.0);
+    if (scatterAmount > 0.0) {
+        vec3 scatterTint = base * vec3(1.15, 0.60, 0.45);
+        result += scatterTint * scatterAmount *
+                  (uAmbient * 0.20 + length(direct) * 0.10);
     }
     result *= exp2(uExposure);
 

@@ -44,6 +44,19 @@ void glfwErrorCallback(int code, const char* description) {
     OutputDebugStringA(buffer);
 }
 
+void dropCallback(GLFWwindow* window, int count, const char** dropped) {
+    auto* app = static_cast<App*>(glfwGetWindowUserPointer(window));
+    if (!app) return;
+    std::vector<std::filesystem::path> files;
+    files.reserve(static_cast<std::size_t>(std::max(count, 0)));
+    for (int i = 0; i < count; ++i) {
+        if (dropped[i] && dropped[i][0] != '\0') {
+            files.push_back(paths::fromUtf8(dropped[i]));
+        }
+    }
+    if (!files.empty()) app->openPaths(files);
+}
+
 #ifndef NDEBUG
 void APIENTRY glDebugCallback(GLenum, GLenum type, GLuint, GLenum severity,
                               GLsizei, const GLchar* message, const void*) {
@@ -150,6 +163,8 @@ bool App::initializeWindow() {
         return false;
     }
 
+    glfwSetWindowUserPointer(window_, this);
+    glfwSetDropCallback(window_, dropCallback);
     glfwMakeContextCurrent(window_);
     glfwSetWindowSizeLimits(window_, 1100, 700, GLFW_DONT_CARE, GLFW_DONT_CARE);
 
@@ -387,6 +402,23 @@ void App::drawFrame() {
             if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Comma, false)) {
                 ui.settingsOpen = true;
             }
+            if (io.KeyCtrl && io.KeyShift &&
+                ImGui::IsKeyPressed(ImGuiKey_C, false)) {
+                copyLook();
+            }
+            if (io.KeyCtrl && io.KeyShift &&
+                ImGui::IsKeyPressed(ImGuiKey_V, false)) {
+                pasteLook();
+            }
+            if (io.KeyCtrl && !io.KeyShift &&
+                ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+                undo();
+            }
+            if (io.KeyCtrl &&
+                (ImGui::IsKeyPressed(ImGuiKey_Y, false) ||
+                 (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z, false)))) {
+                redo();
+            }
             if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
                 core::Document* doc = activeDocument();
                 if (doc) doc->fitPending = true;
@@ -395,6 +427,10 @@ void App::drawFrame() {
     }
 
     ui::draw(*this);
+
+    if (core::Document* doc = activeDocument()) {
+        trackHistory(*doc, now);
+    }
 
     if (hasTask()) {
         const core::Document* doc = activeDocument();
@@ -440,15 +476,21 @@ gpu::Texture* App::thumbnail(uint64_t id) {
 }
 
 void App::requestOpenImage() {
-    const auto paths =
+    const auto selected =
         native_dialog::openImagesDialog(glfwGetWin32Window(window_),
-                                      paths::fromUtf8(tr("topbar.open")).c_str());
-    if (paths.empty()) return;
+                                        paths::fromUtf8(tr("topbar.open"))
+                                            .c_str());
+    if (selected.empty()) return;
+    openPaths(selected);
+}
 
+void App::openPaths(const std::vector<std::filesystem::path>& files) {
     std::string firstError;
     int failed = 0;
     uint64_t lastOpened = 0;
-    for (const auto& path : paths) {
+    for (const auto& path : files) {
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(path, ec)) continue;
         std::string error;
         const uint64_t id = addDocument(path, &error);
         if (id != 0) {
@@ -488,14 +530,21 @@ uint64_t App::addDocument(const std::filesystem::path& path, std::string* error)
 }
 
 void App::activateDocument(uint64_t id) {
+    if (core::Document* previous = activeDocument()) {
+        finalizeHistory(*previous);
+    }
     if (!documents_.activate(id)) return;
     ui.draggingLight = 0;
     clearStatus();
 }
 
 void App::closeDocument(uint64_t id) {
+    if (core::Document* active = activeDocument(); active && active->id == id) {
+        finalizeHistory(*active);
+    }
     const DocumentStore::CloseResult result = documents_.close(id);
     if (!result.closed) return;
+    histories_.erase(id);
     if (result.activeChanged) {
         ui.draggingLight = 0;
     }
@@ -646,15 +695,177 @@ void App::setBackend(core::Backend backend) {
     saveConfig();
 }
 
+App::LookSnapshot App::captureLook(const core::Document& doc) const {
+    LookSnapshot look;
+    look.settings = doc.settings;
+    look.lights = doc.lights;
+    look.selectedLight = doc.selectedLight;
+    look.soloLight = doc.soloLight;
+    look.animate = doc.animate;
+    return look;
+}
+
+void App::applyLook(core::Document& doc, const LookSnapshot& look) const {
+    doc.settings = look.settings;
+    doc.lights = look.lights;
+    doc.soloLight = look.soloLight;
+    doc.selectedLight = look.selectedLight;
+    doc.animate = look.animate;
+    if (doc.lights.empty()) {
+        doc.lights.push_back(core::makeLight(1));
+    }
+    const bool hasSelection =
+        std::any_of(doc.lights.begin(), doc.lights.end(),
+                    [&](const core::Light& light) {
+                        return light.id == doc.selectedLight;
+                    });
+    if (!hasSelection) doc.selectedLight = doc.lights.front().id;
+    const bool hasSolo =
+        doc.soloLight != 0 &&
+        std::any_of(doc.lights.begin(), doc.lights.end(),
+                    [&](const core::Light& light) {
+                        return light.id == doc.soloLight;
+                    });
+    if (!hasSolo) doc.soloLight = 0;
+}
+
+App::DocumentHistory& App::historyFor(std::uint64_t documentId) {
+    return histories_[documentId];
+}
+
+void App::finalizeHistory(core::Document& doc) {
+    if (!doc.id) return;
+    auto& history = historyFor(doc.id);
+    if (!history.initialized) {
+        history.stable = history.latest = captureLook(doc);
+        history.initialized = true;
+        history.burst = false;
+        return;
+    }
+    if (history.burst) {
+        history.stable = history.latest;
+        history.burst = false;
+    }
+}
+
+void App::trackHistory(core::Document& doc, double now) {
+    if (!doc.id) return;
+    auto& history = historyFor(doc.id);
+    const LookSnapshot current = captureLook(doc);
+    if (!history.initialized) {
+        history.stable = history.latest = current;
+        history.initialized = true;
+        return;
+    }
+
+    // Orbiting lights change every frame by design; do not turn that motion
+    // into an endless undo stack.
+    if (doc.animate) {
+        history.stable = history.latest = current;
+        history.burst = false;
+        return;
+    }
+
+    if (current.sameLook(history.latest)) {
+        if (history.burst && now - history.lastChange > 0.5) {
+            history.stable = history.latest;
+            history.burst = false;
+        }
+        return;
+    }
+
+    if (!history.burst) {
+        history.undo.push_back(history.stable);
+        if (history.undo.size() > 60) history.undo.erase(history.undo.begin());
+        history.redo.clear();
+        history.burst = true;
+    }
+    history.latest = current;
+    history.lastChange = now;
+}
+
+void App::beginLookEdit(core::Document& doc) {
+    auto& history = historyFor(doc.id);
+    const LookSnapshot before = captureLook(doc);
+    if (!history.initialized) {
+        history.stable = history.latest = before;
+        history.initialized = true;
+    }
+    history.undo.push_back(before);
+    if (history.undo.size() > 60) history.undo.erase(history.undo.begin());
+    history.redo.clear();
+    history.burst = false;
+}
+
+void App::commitLookEdit(core::Document& doc) {
+    auto& history = historyFor(doc.id);
+    history.stable = history.latest = captureLook(doc);
+    history.initialized = true;
+    history.burst = false;
+}
+
+void App::copyLook() {
+    core::Document* doc = activeDocument();
+    if (!doc) return;
+    lookClipboard_ = captureLook(*doc);
+    lookClipboard_.animate = false;
+    lookClipboardValid_ = true;
+    setStatus(tr("look.copied"));
+}
+
+void App::pasteLook() {
+    core::Document* doc = activeDocument();
+    if (!doc || !lookClipboardValid_) return;
+    beginLookEdit(*doc);
+    applyLook(*doc, lookClipboard_);
+    commitLookEdit(*doc);
+    setStatus(tr("look.pasted"));
+}
+
+void App::undo() {
+    core::Document* doc = activeDocument();
+    if (!doc) return;
+    finalizeHistory(*doc);
+    auto& history = historyFor(doc->id);
+    if (history.undo.empty()) {
+        setStatus(tr("history.empty"));
+        return;
+    }
+    history.redo.push_back(captureLook(*doc));
+    applyLook(*doc, history.undo.back());
+    history.undo.pop_back();
+    commitLookEdit(*doc);
+    setStatus(tr("history.undo"));
+}
+
+void App::redo() {
+    core::Document* doc = activeDocument();
+    if (!doc) return;
+    finalizeHistory(*doc);
+    auto& history = historyFor(doc->id);
+    if (history.redo.empty()) {
+        setStatus(tr("history.empty"));
+        return;
+    }
+    history.undo.push_back(captureLook(*doc));
+    applyLook(*doc, history.redo.back());
+    history.redo.pop_back();
+    commitLookEdit(*doc);
+    setStatus(tr("history.redo"));
+}
+
 void App::resetTask() {
     core::Document* doc = activeDocument();
     if (!doc) return;
 
+    beginLookEdit(*doc);
     doc->settings = core::defaults();
     doc->lights = {core::makeLight(1)};
     doc->selectedLight = 1;
+    doc->soloLight = 0;
     doc->animate = false;
     doc->view = doc->hasDepth ? core::View::Lit : core::View::Original;
+    commitLookEdit(*doc);
 }
 
 void App::openInitialFilesFromCommandLine() {

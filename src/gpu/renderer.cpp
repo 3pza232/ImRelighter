@@ -311,6 +311,9 @@ void Renderer::bindLights(const Shader& shader, const core::Document& doc) {
     std::array<float, 8> intensities{};
     std::array<float, 8> ranges{};
     std::array<int, 8> enabled{};
+    std::array<int, 8> types{};
+    std::array<float, 8> spotCos{};
+    std::array<float, 8> spotSoft{};
     const int count = std::min(8, static_cast<int>(doc.lights.size()));
 
     for (int i = 0; i < count; ++i) {
@@ -326,7 +329,18 @@ void Renderer::bindLights(const Shader& shader, const core::Document& doc) {
         }
         intensities[static_cast<size_t>(i)] = light.intensity;
         ranges[static_cast<size_t>(i)] = light.range;
-        enabled[static_cast<size_t>(i)] = light.enabled ? 1 : 0;
+        const bool soloMuted =
+            doc.soloLight != 0 && light.id != doc.soloLight;
+        enabled[static_cast<size_t>(i)] =
+            light.enabled && !soloMuted ? 1 : 0;
+        types[static_cast<size_t>(i)] =
+            light.type == core::LightType::Spot ? 1 : 0;
+        const float halfAngle =
+            std::clamp(light.spotAngle, 1.0f, 179.0f) * 0.5f;
+        spotCos[static_cast<size_t>(i)] =
+            std::cos(halfAngle * 3.14159265358979323846f / 180.0f);
+        spotSoft[static_cast<size_t>(i)] =
+            std::clamp(light.spotSoftness, 0.0f, 1.0f);
     }
 
     shader.setInt("uLightCount", count);
@@ -335,6 +349,9 @@ void Renderer::bindLights(const Shader& shader, const core::Document& doc) {
     shader.setFloatArray("uLightIntensity", intensities.data(), count);
     shader.setFloatArray("uLightRange", ranges.data(), count);
     shader.setIntArray("uLightEnabled", enabled.data(), count);
+    shader.setIntArray("uLightType", types.data(), count);
+    shader.setFloatArray("uLightSpotCos", spotCos.data(), count);
+    shader.setFloatArray("uLightSpotSoft", spotSoft.data(), count);
 }
 
 void Renderer::renderPasses(const core::Document& doc, core::View view) {
@@ -505,6 +522,11 @@ void Renderer::passLighting(const core::Document& doc, core::View view) {
     lightingShader_.setFloat("uSpecular", doc.settings.specular);
     lightingShader_.setFloat("uShininess", doc.settings.shininess);
     lightingShader_.setFloat("uRim", doc.settings.rim);
+    lightingShader_.setFloat("uMaterialRoughness",
+                             doc.settings.materialRoughness);
+    lightingShader_.setFloat("uMetalness", doc.settings.metalness);
+    lightingShader_.setFloat("uSheen", doc.settings.sheen);
+    lightingShader_.setFloat("uSubsurface", doc.settings.subsurface);
     lightingShader_.setFloat("uExposure", doc.settings.exposure);
     lightingShader_.setFloat("uMix", doc.settings.mix);
     lightingShader_.setFloat("uComparison", doc.settings.comparison);
@@ -584,6 +606,7 @@ std::size_t renderStateHash(const core::Document& doc) {
     addInt(doc.height);
     addInt(static_cast<int>(doc.view));
     addInt(doc.selectedLight);
+    addInt(doc.soloLight);
     addFloat(doc.settings.comparison);
     addInt(static_cast<int>(doc.settings.lightingModel));
     addInt(static_cast<int>(doc.settings.toneMap));
@@ -598,6 +621,10 @@ std::size_t renderStateHash(const core::Document& doc) {
     addFloat(doc.settings.specular);
     addFloat(doc.settings.shininess);
     addFloat(doc.settings.rim);
+    addFloat(doc.settings.materialRoughness);
+    addFloat(doc.settings.metalness);
+    addFloat(doc.settings.sheen);
+    addFloat(doc.settings.subsurface);
     addFloat(doc.settings.exposure);
     addFloat(doc.settings.height);
     addInt(doc.settings.invert ? 1 : 0);
@@ -623,6 +650,9 @@ std::size_t renderStateHash(const core::Document& doc) {
         addFloat(light.intensity);
         addFloat(light.range);
         addInt(light.enabled ? 1 : 0);
+        addInt(static_cast<int>(light.type));
+        addFloat(light.spotAngle);
+        addFloat(light.spotSoftness);
         for (float value : light.position) addFloat(value);
     }
     return seed;

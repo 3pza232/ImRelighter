@@ -15,6 +15,7 @@ enum class Theme { Dark, Light };
 enum class ExportKind { Lit, Normal, Depth, Lighting, Shadow };
 enum class LightingModel { Classic, Physical };
 enum class ToneMap { Soft, Aces };
+enum class LightType { Point, Spot };
 
 struct Light {
     int id = 1;
@@ -24,6 +25,11 @@ struct Light {
     float intensity = 1.8f;
     float range = 3.0f;
     bool enabled = true;
+    LightType type = LightType::Point;
+    float spotAngle = 35.0f;
+    float spotSoftness = 0.35f;
+
+    bool operator==(const Light&) const = default;
 };
 
 struct Settings {
@@ -45,6 +51,10 @@ struct Settings {
     float specular = 0.04f;
     float shininess = 60.0f;
     float rim = 0.06f;
+    float materialRoughness = 0.30f;
+    float metalness = 0.0f;
+    float sheen = 0.0f;
+    float subsurface = 0.0f;
 
     float exposure = 0.0f;
     float height = 0.65f;
@@ -68,6 +78,8 @@ struct Settings {
     int shadowSamples = 4;
     int shadowDivisor = 2;
     int previewLongEdge = 1536;
+
+    bool operator==(const Settings&) const = default;
 };
 
 inline Settings defaults() {

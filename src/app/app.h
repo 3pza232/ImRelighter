@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "app/document_store.h"
@@ -41,6 +42,12 @@ public:
     int run();
 
     void requestOpenImage();
+    void openPaths(const std::vector<std::filesystem::path>& paths);
+    void copyLook();
+    void pasteLook();
+    bool hasLookClipboard() const { return lookClipboardValid_; }
+    void undo();
+    void redo();
     void generateDepth();
     void cancelInference();
     void exportImage(core::ExportKind kind);
@@ -100,6 +107,40 @@ public:
     UiState ui;
 
 private:
+    struct LookSnapshot {
+        core::Settings settings;
+        std::vector<core::Light> lights;
+        int selectedLight = 1;
+        int soloLight = 0;
+        bool animate = false;
+
+        // Selecting a light is a navigation action, not a look edit. History
+        // compares everything except the selection so clicking the light list
+        // does not create an undo step.
+        bool sameLook(const LookSnapshot& other) const {
+            return settings == other.settings && lights == other.lights &&
+                   soloLight == other.soloLight && animate == other.animate;
+        }
+    };
+
+    struct DocumentHistory {
+        std::vector<LookSnapshot> undo;
+        std::vector<LookSnapshot> redo;
+        LookSnapshot stable;
+        LookSnapshot latest;
+        bool initialized = false;
+        bool burst = false;
+        double lastChange = 0.0;
+    };
+
+    LookSnapshot captureLook(const core::Document& doc) const;
+    void applyLook(core::Document& doc, const LookSnapshot& look) const;
+    DocumentHistory& historyFor(std::uint64_t documentId);
+    void finalizeHistory(core::Document& doc);
+    void trackHistory(core::Document& doc, double now);
+    void beginLookEdit(core::Document& doc);
+    void commitLookEdit(core::Document& doc);
+
     bool initializeWindow();
     bool initializeImGui();
     void loadFonts();
@@ -131,6 +172,10 @@ private:
     ModelManager models_{config};
     ExportService exports_;
     double lastFrameTime_ = 0.0;
+
+    std::unordered_map<std::uint64_t, DocumentHistory> histories_;
+    LookSnapshot lookClipboard_;
+    bool lookClipboardValid_ = false;
 };
 
 } // namespace app

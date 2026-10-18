@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <vector>
@@ -598,6 +599,30 @@ void testConfigRoundTrip() {
               loaded.memoryLimitGb == 9 &&
               loaded.maxImageMegapixels == 17,
           "config round-trip preserves values");
+
+    {
+        nlohmann::json legacy;
+        legacy["version"] = 1;
+        legacy["language"] = "zh-CN";
+        legacy["futureField"] = "keep-me";
+        std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+        stream << legacy.dump();
+    }
+    core::UserConfig migrated;
+    error.clear();
+    check(core::loadUserConfigFrom(path, migrated, &error),
+          "legacy config loads");
+    check(migrated.languageSet && migrated.language == core::Language::ZhCN,
+          "legacy config keeps known fields");
+    check(core::saveUserConfigTo(path, migrated, &error),
+          "legacy config saves");
+    {
+        std::ifstream stream(path, std::ios::binary);
+        const std::string contents((std::istreambuf_iterator<char>(stream)),
+                                   std::istreambuf_iterator<char>());
+        check(contents.find("futureField") != std::string::npos,
+              "unknown config fields survive a save");
+    }
 
     {
         std::ofstream stream(path, std::ios::binary | std::ios::trunc);
