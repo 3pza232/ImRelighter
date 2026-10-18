@@ -3,7 +3,9 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstring>
 
+#include "io/image_limits.h"
 #include "io/paths.h"
 
 namespace io {
@@ -22,6 +24,18 @@ struct WebPApi {
     bool ready() const { return getInfo && decodeRgba && free; }
 };
 
+// GetProcAddress returns FARPROC, which cannot be cast to a function pointer
+// with a different signature in portable C++. Copying the bits expresses the
+// same conversion without -Wcast-function-type diagnostics.
+template <typename Function>
+Function loadFunction(HMODULE module, const char* name) {
+    static_assert(sizeof(Function) == sizeof(FARPROC));
+    const FARPROC address = GetProcAddress(module, name);
+    Function function = nullptr;
+    std::memcpy(&function, &address, sizeof(function));
+    return function;
+}
+
 WebPApi& api() {
     static WebPApi value = [] {
         WebPApi result;
@@ -31,22 +45,16 @@ WebPApi& api() {
             LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
         if (!result.module) result.module = LoadLibraryW(L"libwebp.dll");
         if (!result.module) return result;
-        result.getInfo = reinterpret_cast<WebPGetInfoFn>(
-            GetProcAddress(result.module, "WebPGetInfo"));
-        result.decodeRgba = reinterpret_cast<WebPDecodeRGBAFn>(
-            GetProcAddress(result.module, "WebPDecodeRGBA"));
-        result.free = reinterpret_cast<WebPFreeFn>(
-            GetProcAddress(result.module, "WebPFree"));
+        result.getInfo = loadFunction<WebPGetInfoFn>(result.module, "WebPGetInfo");
+        result.decodeRgba =
+            loadFunction<WebPDecodeRGBAFn>(result.module, "WebPDecodeRGBA");
+        result.free = loadFunction<WebPFreeFn>(result.module, "WebPFree");
         return result;
     }();
     return value;
 }
 
 } // namespace
-
-bool webpAvailable() {
-    return api().ready();
-}
 
 bool decodeWebp(const uint8_t* bytes, size_t size, int& width, int& height,
                 std::vector<uint8_t>& rgba, std::string* error) {
@@ -67,8 +75,7 @@ bool decodeWebp(const uint8_t* bytes, size_t size, int& width, int& height,
         if (error) *error = "Invalid WebP image.";
         return false;
     }
-    constexpr int kMaxPixels = 24'000'000;
-    if (static_cast<int64_t>(headerWidth) * headerHeight > kMaxPixels) {
+    if (exceedsPixelLimit(headerWidth, headerHeight)) {
         if (error) *error = "Image is larger than the 24 megapixel limit.";
         return false;
     }

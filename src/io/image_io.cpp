@@ -5,15 +5,14 @@
 #include <cmath>
 #include <fstream>
 
+#include "io/exif.h"
+#include "io/image_limits.h"
+#include "io/image_probe.h"
 #include "io/paths.h"
 #include "io/webp_decoder.h"
 #include "stb_image.h"
 
 namespace io {
-
-namespace {
-constexpr int kMaxPixels = 24'000'000;
-}
 
 std::optional<ImageData> loadImage(const std::filesystem::path& path,
                                    std::string* error) {
@@ -40,6 +39,19 @@ std::optional<ImageData> loadImage(const std::filesystem::path& path,
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
+    const bool isJpeg = extension == ".jpg" || extension == ".jpeg";
+    const int orientation =
+        isJpeg ? readJpegOrientation(bytes.data(), bytes.size()) : 0;
+
+    int headerWidth = 0;
+    int headerHeight = 0;
+    if (probeImageDimensions(bytes.data(), bytes.size(), headerWidth,
+                             headerHeight) &&
+        exceedsPixelLimit(headerWidth, headerHeight)) {
+        if (error) *error = "Image is larger than the 24 megapixel limit.";
+        return std::nullopt;
+    }
+
     ImageData result;
     if (extension == ".webp") {
         if (!decodeWebp(bytes.data(), bytes.size(), result.width, result.height,
@@ -63,7 +75,7 @@ std::optional<ImageData> loadImage(const std::filesystem::path& path,
         return std::nullopt;
     }
 
-    if (width <= 0 || height <= 0 || width * height > kMaxPixels) {
+    if (width <= 0 || height <= 0 || exceedsPixelLimit(width, height)) {
         stbi_image_free(pixels);
         if (error) *error = "Image is larger than the 24 megapixel limit.";
         return std::nullopt;
@@ -73,6 +85,11 @@ std::optional<ImageData> loadImage(const std::filesystem::path& path,
     result.height = height;
     result.rgba.assign(pixels, pixels + static_cast<size_t>(width) * height * 4);
     stbi_image_free(pixels);
+
+    if (orientation > 1) {
+        applyExifOrientation(result.rgba, result.width, result.height,
+                             orientation);
+    }
     return result;
 }
 

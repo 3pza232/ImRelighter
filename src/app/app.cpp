@@ -13,14 +13,12 @@
 #include <stb_image.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cwctype>
-#include <cstdio>
-#include <fstream>
 #include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cwctype>
+#include <fstream>
 #include <future>
-#include <sstream>
-#include <thread>
 
 #include <shellapi.h>
 
@@ -30,7 +28,6 @@
 #include "io/hash.h"
 #include "io/png_export.h"
 #include "ml/model_metadata.h"
-#include "nlohmann/json.hpp"
 #include "ui/theme.h"
 #include "ui/ui.h"
 
@@ -56,29 +53,17 @@ void APIENTRY glDebugCallback(GLenum, GLenum type, GLuint, GLenum severity,
 }
 #endif
 
-std::wstring widen(const std::string& text) {
-    if (text.empty()) return {};
-    const int needed = MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
-                                           static_cast<int>(text.size()), nullptr, 0);
-    if (needed <= 0) return {};
-    std::wstring result(static_cast<size_t>(needed), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()),
-                        result.data(), needed);
-    return result;
-}
-
-std::filesystem::path resolveModelFile(const std::filesystem::path& directory) {
-    const std::filesystem::path candidates[] = {
-        directory / L"model.onnx",
-        directory / L"depth-anything-v2-small" / L"model.onnx",
-        directory / L"onnx-community" / L"depth-anything-v2-small" / L"onnx" /
-            L"model.onnx",
-    };
-    std::error_code ec;
-    for (const auto& candidate : candidates) {
-        if (std::filesystem::is_regular_file(candidate, ec)) return candidate;
-    }
-    return {};
+std::vector<unsigned char> readFileBytes(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary | std::ios::ate);
+    if (!stream) return {};
+    const std::streampos size = stream.tellg();
+    if (size <= 0) return {};
+    std::vector<unsigned char> bytes(static_cast<size_t>(size));
+    stream.seekg(0, std::ios::beg);
+    stream.read(reinterpret_cast<char*>(bytes.data()),
+                static_cast<std::streamsize>(bytes.size()));
+    if (!stream) return {};
+    return bytes;
 }
 
 } // namespace
@@ -98,7 +83,7 @@ int App::run() {
     renderer_ = std::make_unique<gpu::Renderer>();
     std::string rendererError;
     if (!renderer_->initialize(paths::assetPath("shaders"), &rendererError)) {
-        ui.statusOverride = rendererError;
+        setStatus(rendererError, 10.0);
         renderer_.reset();
     }
     inference_.start(paths::exeDir() / L"onnxruntime.dll");
@@ -201,7 +186,7 @@ void App::loadConfigAndLanguage() {
     core::UserConfig loaded;
     std::string error;
     if (!core::loadUserConfig(loaded, &error)) {
-        OutputDebugStringA((error + "\n").c_str());
+        setStatus(error, 10.0);
     }
     if (!loaded.languageSet) {
         loaded.language = core::I18n::systemDefault();
@@ -240,19 +225,52 @@ void App::loadFonts() {
     fontConfig.OversampleH = 2;
     fontConfig.OversampleV = 2;
     fontConfig.PixelSnapH = true;
+    fontConfig.FontDataOwnedByAtlas = false;
 
     float scaleX = 1.0f;
     float scaleY = 1.0f;
     glfwGetWindowContentScale(window_, &scaleX, &scaleY);
     const float scale = std::max(1.0f, (scaleX + scaleY) * 0.5f);
+    ui::setUiScale(scale);
 
-    ImFont* font = io.Fonts->AddFontFromFileTTF(
-        paths::toUtf8(fontPath).c_str(),
-        15.0f * scale,
-        &fontConfig,
-        io.Fonts->GetGlyphRangesChineseFull());
+    // Keep the scaled minimum inside the work area; otherwise Windows cannot
+    // shrink the window and the bottom or right edge lands off-screen.
+    int minWidth = static_cast<int>(1100.0f * scale);
+    int minHeight = static_cast<int>(700.0f * scale);
+    if (GLFWmonitor* monitor = glfwGetPrimaryMonitor()) {
+        int mx = 0;
+        int my = 0;
+        int mw = 0;
+        int mh = 0;
+        glfwGetMonitorWorkarea(monitor, &mx, &my, &mw, &mh);
+        (void)mx;
+        (void)my;
+        if (mw > 0 && mh > 0) {
+            minWidth = std::min(minWidth, mw - 40);
+            minHeight = std::min(minHeight, mh - 40);
+            int width = 0;
+            int height = 0;
+            glfwGetWindowSize(window_, &width, &height);
+            if (width < minWidth || height < minHeight) {
+                glfwSetWindowSize(window_, std::max(width, minWidth),
+                                  std::max(height, minHeight));
+            }
+        }
+    }
+    glfwSetWindowSizeLimits(window_, std::max(minWidth, 640),
+                            std::max(minHeight, 480), GLFW_DONT_CARE,
+                            GLFW_DONT_CARE);
+
+    fontData_ = readFileBytes(fontPath);
+    ImFont* font = nullptr;
+    if (!fontData_.empty()) {
+        font = io.Fonts->AddFontFromMemoryTTF(
+            fontData_.data(), static_cast<int>(fontData_.size()), 15.0f * scale,
+            &fontConfig, io.Fonts->GetGlyphRangesChineseFull());
+    }
 
     if (!font) {
+        fontData_.clear();
         OutputDebugStringA("ImRelighter: failed to load Source Han Sans; using default font.\n");
         io.Fonts->AddFontDefault();
     }
@@ -260,11 +278,14 @@ void App::loadFonts() {
 
 void App::loadIcon() {
     const auto iconPath = paths::assetPath("icons/ImRelight.png");
+    const auto iconData = readFileBytes(iconPath);
+    if (iconData.empty()) return;
     int width = 0;
     int height = 0;
     int channels = 0;
-    stbi_uc* pixels = stbi_load(paths::toUtf8(iconPath).c_str(), &width, &height,
-                                &channels, 4);
+    stbi_uc* pixels = stbi_load_from_memory(
+        iconData.data(), static_cast<int>(iconData.size()), &width, &height,
+        &channels, 4);
     if (!pixels) return;
 
     GLFWimage image;
@@ -276,33 +297,26 @@ void App::loadIcon() {
 }
 
 void App::pollExport() {
-    if (!exportFuture_.valid()) return;
-    if (exportFuture_.wait_for(std::chrono::seconds(0)) !=
-        std::future_status::ready) {
-        return;
-    }
-    std::string error = exportFuture_.get();
-    ui.statusOverride = error.empty() ? tr("export.done") : error;
+    const ExportService::Result result = exports_.poll();
+    if (!result.done) return;
+    setStatus(result.error.empty() ? tr("export.done") : result.error,
+              result.error.empty() ? 4.0 : 10.0);
 }
 
 void App::drawFrame() {
     pollExport();
-    if (modelShaFuture_.valid() &&
-        modelShaFuture_.wait_for(std::chrono::seconds(0)) ==
-            std::future_status::ready) {
-        auto result = modelShaFuture_.get();
-        if (result.first == modelPath()) {
-            modelShaValue_ = std::move(result.second);
-        } else {
-            modelShaPath_.clear();
-        }
-    }
+    models_.pollSha();
     const double now = glfwGetTime();
     if (lastFrameTime_ == 0.0) lastFrameTime_ = now;
+    if (!ui.statusOverride.empty() && !ui.statusBusy &&
+        now >= ui.statusExpiresAt) {
+        clearStatus();
+    }
     const double delta = std::min(0.05, std::max(0.0, now - lastFrameTime_));
     lastFrameTime_ = now;
-    if (ui.animate && hasTask()) {
-        for (core::Light& light : ui.lights) {
+    core::Document* active = activeDocument();
+    if (active && active->animate) {
+        for (core::Light& light : active->lights) {
             const float radius = std::max(
                 0.6f, std::sqrt(light.position[0] * light.position[0] +
                                 light.position[1] * light.position[1]));
@@ -320,54 +334,61 @@ void App::drawFrame() {
     ml::InferenceResult inferenceResult;
     while (inference_.poll(inferenceResult)) {
         core::Document* target = nullptr;
-        for (const auto& document : documents_) {
-            if (document->id == inferenceResult.documentId) {
-                target = document.get();
+        for (std::size_t i = 0; i < documentCount(); ++i) {
+            core::Document* candidate = documents_.document(i);
+            if (candidate->id == inferenceResult.documentId) {
+                target = candidate;
                 break;
             }
         }
         if (!target || target->depthGeneration != inferenceResult.generation) {
+            if (!inference_.busy()) clearStatusIfBusy();
             continue;
         }
         if (inferenceResult.cancelled) {
-            ui.statusOverride = tr("depth.cancelled");
+            setStatus(tr("depth.cancelled"));
             continue;
         }
         if (!inferenceResult.error.empty()) {
-            ui.statusOverride = inferenceResult.error;
+            setStatus(inferenceResult.error, 10.0);
             continue;
         }
         target->depth = std::move(inferenceResult.depth);
         target->hasDepth = true;
         ++target->depthRevision;
         if (target == activeDocument()) {
-            ui.view = core::View::Lit;
-            ui.statusOverride = tr("depth.ready");
+            target->view = core::View::Lit;
         }
+        setStatus(tr("depth.ready"));
     }
 
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput) {
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) requestOpenImage();
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
-            ui.exportPopupRequested = true;
-        }
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_G, false)) {
-            generateDepth();
-        }
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Comma, false)) {
-            ui.settingsOpen = !ui.settingsOpen;
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_F, false) && hasTask()) {
-            ui.fitPending = true;
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-            if (ui.settingsOpen) ui.settingsOpen = false;
+        if (ui.settingsOpen) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+                ui.settingsOpen = false;
+            }
+        } else {
+            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) {
+                requestOpenImage();
+            }
+            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
+                ui.exportPopupRequested = true;
+            }
+            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_G, false)) {
+                generateDepth();
+            }
+            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Comma, false)) {
+                ui.settingsOpen = true;
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+                core::Document* doc = activeDocument();
+                if (doc) doc->fitPending = true;
+            }
         }
     }
 
     ui::draw(*this);
-    saveUiToActive();
 
     if (hasTask()) {
         const core::Document* doc = activeDocument();
@@ -375,7 +396,7 @@ void App::drawFrame() {
             std::string renderError;
             if (!renderer_->renderPreview(*doc, &renderError) &&
                 !renderError.empty()) {
-                ui.statusOverride = renderError;
+                setStatus(renderError, 10.0);
             }
         }
     }
@@ -393,32 +414,29 @@ void App::drawFrame() {
 }
 
 bool App::hasTask() const {
-    return activeIndex_ >= 0 &&
-           activeIndex_ < static_cast<int>(documents_.size());
+    return documents_.hasActive();
 }
 
 const core::Document* App::document(size_t index) const {
-    if (index >= documents_.size()) return nullptr;
-    return documents_[index].get();
+    return documents_.document(index);
 }
 
 const core::Document* App::activeDocument() const {
-    return hasTask() ? documents_[activeIndex_].get() : nullptr;
+    return documents_.activeDocument();
 }
 
 core::Document* App::activeDocument() {
-    return hasTask() ? documents_[activeIndex_].get() : nullptr;
+    return documents_.activeDocument();
 }
 
 gpu::Texture* App::thumbnail(uint64_t id) {
-    const auto it = thumbnails_.find(id);
-    return it == thumbnails_.end() ? nullptr : it->second.get();
+    return documents_.thumbnail(id);
 }
 
 void App::requestOpenImage() {
     const auto paths =
         native_dialog::openImagesDialog(glfwGetWin32Window(window_),
-                                      widen(tr("topbar.open")).c_str());
+                                      paths::fromUtf8(tr("topbar.open")).c_str());
     if (paths.empty()) return;
 
     std::string error;
@@ -429,182 +447,55 @@ void App::requestOpenImage() {
     }
 
     if (lastOpened != 0) {
-        ui.statusOverride.clear();
+        clearStatus();
         activateDocument(lastOpened);
     } else if (!error.empty()) {
-        ui.statusOverride = error;
+        setStatus(error, 10.0);
     }
 }
 
 uint64_t App::addDocument(const std::filesystem::path& path, std::string* error) {
-    const int taskLimit = std::clamp(config.maxTasks, 1, 500);
-    if (documents_.size() >= static_cast<size_t>(taskLimit)) {
-        if (error) {
-            *error = tr("document.limit") + " (" + std::to_string(taskLimit) + ")";
-        }
-        return 0;
-    }
-
-    auto image = io::loadImage(path, error);
-    if (!image) return 0;
-
-    uint64_t used = 0;
-    for (const auto& document : documents_) {
-        used += document->color.size() + document->depth.capacity() * sizeof(float) +
-                document->thumbnail.size();
-    }
-    const uint64_t incoming =
-        image->rgba.size() +
-        static_cast<uint64_t>(image->width) * image->height * sizeof(float) +
-        128ull * 1024ull;
-    const int memoryGb = std::clamp(config.memoryLimitGb, 1, 16);
-    const uint64_t memoryBudget =
-        static_cast<uint64_t>(memoryGb) * 1024ull * 1024ull * 1024ull;
-    if (used + incoming > memoryBudget) {
-        if (error) {
-            *error = tr("document.memory") + " (" + std::to_string(memoryGb) +
-                     " GB)";
-        }
-        return 0;
-    }
-
-    auto doc = std::make_unique<core::Document>();
-    doc->id = nextDocumentId_++;
-    doc->path = path;
-    doc->name = paths::fileNameUtf8(path);
-    doc->width = image->width;
-    doc->height = image->height;
-
-    if (!io::makeThumbnail(*image, 160, doc->thumbnail, doc->thumbWidth,
-                           doc->thumbHeight)) {
-        if (error) *error = "Failed to create thumbnail.";
-        return 0;
-    }
-
-    doc->color = std::move(image->rgba);
-    doc->settings = core::defaults();
-    doc->lights = {core::makeLight(1)};
-    doc->selectedLight = 1;
-    doc->view = core::View::Original;
-    doc->fitPending = true;
-
-    const uint64_t id = doc->id;
-    auto texture = std::make_unique<gpu::Texture>();
-    texture->upload(doc->thumbnail.data(), doc->thumbWidth, doc->thumbHeight);
-    thumbnails_[id] = std::move(texture);
-
-    documents_.push_back(std::move(doc));
-    return id;
+    DocumentStore::Limits limits;
+    limits.maxTasks = config.maxTasks;
+    limits.memoryGb = config.memoryLimitGb;
+    limits.taskLimitMessage = tr("document.limit");
+    limits.memoryLimitMessage = tr("document.memory");
+    return documents_.add(path, limits, error);
 }
 
 void App::activateDocument(uint64_t id) {
-    const auto it = std::find_if(documents_.begin(), documents_.end(),
-                                 [&](const std::unique_ptr<core::Document>& doc) {
-                                     return doc->id == id;
-                                 });
-    if (it == documents_.end()) return;
-
-    const int index = static_cast<int>(std::distance(documents_.begin(), it));
-    if (index == activeIndex_) return;
-
-    saveUiToActive();
-    activeIndex_ = index;
-    ui.statusOverride.clear();
-    loadUiFromActive();
-    uploadActiveTexture();
+    if (!documents_.activate(id)) return;
+    ui.draggingLight = 0;
+    clearStatus();
 }
 
 void App::closeDocument(uint64_t id) {
-    const auto it = std::find_if(documents_.begin(), documents_.end(),
-                                 [&](const std::unique_ptr<core::Document>& doc) {
-                                     return doc->id == id;
-                                 });
-    if (it == documents_.end()) return;
-
-    const int index = static_cast<int>(std::distance(documents_.begin(), it));
-    const bool wasActive = index == activeIndex_;
-    saveUiToActive();
-
-    thumbnails_.erase(id);
-    documents_.erase(it);
-
-    if (documents_.empty()) {
-        activeIndex_ = -1;
-        UiState fresh;
-        fresh.sidebarOpen = ui.sidebarOpen;
-        fresh.settingsOpen = ui.settingsOpen;
-        fresh.exportPopupRequested = ui.exportPopupRequested;
-        ui = std::move(fresh);
-        activeTexture_.destroy();
-        return;
+    const DocumentStore::CloseResult result = documents_.close(id);
+    if (!result.closed) return;
+    if (result.activeChanged) {
+        ui.draggingLight = 0;
     }
-
-    if (index < activeIndex_) {
-        --activeIndex_;
-    }
-
-    if (wasActive) {
-        activeIndex_ = std::min(index, static_cast<int>(documents_.size()) - 1);
-        loadUiFromActive();
-        uploadActiveTexture();
-    }
-}
-
-void App::loadUiFromActive() {
-    const core::Document* doc = activeDocument();
-    if (!doc) {
-        UiState fresh;
-        fresh.sidebarOpen = ui.sidebarOpen;
-        fresh.settingsOpen = ui.settingsOpen;
-        ui = std::move(fresh);
-        return;
-    }
-
-    ui.settings = doc->settings;
-    ui.lights = doc->lights;
-    ui.selectedLight = doc->selectedLight;
-    ui.animate = doc->animate;
-    ui.view = doc->view;
-    ui.zoom = doc->zoom;
-    ui.panX = doc->panX;
-    ui.panY = doc->panY;
-    ui.fitPending = doc->fitPending;
-}
-
-void App::saveUiToActive() {
-    core::Document* doc = activeDocument();
-    if (!doc) return;
-
-    doc->settings = ui.settings;
-    doc->lights = ui.lights;
-    doc->selectedLight = ui.selectedLight;
-    doc->animate = ui.animate;
-    doc->view = ui.view;
-    doc->zoom = ui.zoom;
-    doc->panX = ui.panX;
-    doc->panY = ui.panY;
-    doc->fitPending = ui.fitPending;
 }
 
 unsigned int App::displayTextureId() const {
     const core::Document* doc = activeDocument();
-    if (doc && doc->hasDepth && ui.view != core::View::Original && renderer_ &&
+    if (doc && doc->hasDepth && doc->view != core::View::Original && renderer_ &&
         renderer_->ready() && renderer_->previewTexture() != 0) {
         return renderer_->previewTexture();
     }
-    return activeTexture_.id();
+    return documents_.activeTextureId();
 }
 
 bool App::displayTextureFlipped() const {
     const core::Document* doc = activeDocument();
-    return doc && doc->hasDepth && ui.view != core::View::Original && renderer_ &&
+    return doc && doc->hasDepth && doc->view != core::View::Original && renderer_ &&
            renderer_->ready() && renderer_->previewTexture() != 0;
 }
 
 void App::exportImage(core::ExportKind kind) {
     core::Document* doc = activeDocument();
     if (!doc || !doc->hasDepth) {
-        ui.statusOverride = tr("depth.not_generated");
+        setStatus(tr("depth.not_generated"));
         return;
     }
 
@@ -618,14 +509,14 @@ void App::exportImage(core::ExportKind kind) {
         case core::ExportKind::Shadow: suffix = L"_shadow.png"; view = core::View::Shadow; break;
     }
 
-    if (exportFuture_.valid()) {
-        ui.statusOverride = tr("export.running");
+    if (exports_.busy()) {
+        setStatus(tr("export.running"), 0.0, true);
         return;
     }
 
     std::wstring defaultName = doc->path.stem().wstring() + suffix;
     const auto destination = native_dialog::savePngDialog(
-        glfwGetWin32Window(window_), widen(tr("topbar.export")).c_str(),
+        glfwGetWin32Window(window_), paths::fromUtf8(tr("topbar.export")).c_str(),
         defaultName.c_str());
     if (!destination) return;
 
@@ -634,58 +525,42 @@ void App::exportImage(core::ExportKind kind) {
         const int width = doc->width;
         const int height = doc->height;
         const bool invert = doc->settings.invert;
-        const auto path = *destination;
-        exportFuture_ = std::async(
-            std::launch::async,
-            [path, depth = std::move(depth), width, height, invert]() {
-                std::string error;
-                const bool ok = io::writeDepth16Png(path, depth, width, height,
-                                                    invert, &error);
-                return ok ? std::string() : error;
-            });
-        ui.statusOverride = tr("export.running");
+        exports_.startDepth(*destination, std::move(depth), width, height,
+                            invert);
+        setStatus(tr("export.running"), 0.0, true);
         return;
     }
 
     if (!renderer_) {
-        ui.statusOverride = "Renderer is not available.";
+        setStatus("Renderer is not available.", 10.0);
         return;
     }
 
     std::vector<uint8_t> rgba;
     std::string error;
     if (!renderer_->renderExport(*doc, view, rgba, &error)) {
-        ui.statusOverride = error;
+        setStatus(error, 10.0);
         return;
     }
 
-    const int width = doc->width;
-    const int height = doc->height;
-    const auto path = *destination;
-    exportFuture_ = std::async(
-        std::launch::async, [path, rgba = std::move(rgba), width, height]() {
-            std::string encodeError;
-            const bool ok =
-                io::writeRgba8Png(path, rgba, width, height, &encodeError);
-            return ok ? std::string() : encodeError;
-        });
-    ui.statusOverride = tr("export.running");
+    exports_.startRgba(*destination, std::move(rgba), doc->width, doc->height);
+    setStatus(tr("export.running"), 0.0, true);
 }
 void App::cancelInference() {
     if (!inference_.busy()) return;
     inference_.cancel();
-    ui.statusOverride = tr("depth.cancelling");
+    setStatus(tr("depth.cancelling"), 0.0, true);
 }
 
 void App::generateDepth() {
     core::Document* doc = activeDocument();
     if (!doc) return;
     if (inference_.busy()) {
-        ui.statusOverride = tr("depth.running");
+        setStatus(tr("depth.running"), 0.0, true);
         return;
     }
     if (!modelExists()) {
-        ui.statusOverride = tr("model.missing");
+        setStatus(tr("model.missing"), 6.0);
         return;
     }
 
@@ -697,29 +572,15 @@ void App::generateDepth() {
     job.height = doc->height;
     job.rgba = doc->color;
     job.modelPath = modelPath();
-    job.inputSize = ui.settings.inferenceSize;
+    job.inputSize = doc->settings.inferenceSize;
     job.useDml = config.backend == core::Backend::Dml ||
                  (config.backend == core::Backend::Auto && directmlAvailable());
     job.allowCpuFallback = config.backend == core::Backend::Auto;
     if (!inference_.submit(std::move(job))) {
-        ui.statusOverride = tr("depth.running");
+        setStatus(tr("depth.running"), 0.0, true);
         return;
     }
-    ui.statusOverride = tr("depth.running");
-}
-
-void App::uploadActiveTexture() {
-    const core::Document* doc = activeDocument();
-    if (!doc || doc->color.empty()) {
-        activeTexture_.destroy();
-        return;
-    }
-    activeTexture_.upload(doc->color.data(), doc->width, doc->height);
-}
-
-void App::releaseGpuResources() {
-    activeTexture_.destroy();
-    thumbnails_.clear();
+    setStatus(tr("depth.running"), 0.0, true);
 }
 
 void App::setLanguage(core::Language language) {
@@ -736,10 +597,10 @@ void App::setTheme(core::Theme value) {
     saveConfig();
 }
 
-void App::setResourceLimits(int maxTasks, int memoryLimitGb) {
+void App::setResourceLimits(int maxTasks, int memoryLimitGb, bool persist) {
     config.maxTasks = std::clamp(maxTasks, 1, 500);
     config.memoryLimitGb = std::clamp(memoryLimitGb, 1, 16);
-    saveConfig();
+    if (persist) saveConfig();
 }
 
 void App::setBackend(core::Backend backend) {
@@ -751,12 +612,14 @@ void App::setBackend(core::Backend backend) {
 }
 
 void App::resetTask() {
-    ui.settings = core::defaults();
-    ui.lights = {core::makeLight(1)};
-    ui.selectedLight = 1;
-    ui.animate = false;
-    const core::Document* doc = activeDocument();
-    ui.view = (doc && doc->hasDepth) ? core::View::Lit : core::View::Original;
+    core::Document* doc = activeDocument();
+    if (!doc) return;
+
+    doc->settings = core::defaults();
+    doc->lights = {core::makeLight(1)};
+    doc->selectedLight = 1;
+    doc->animate = false;
+    doc->view = doc->hasDepth ? core::View::Lit : core::View::Original;
 }
 
 void App::openInitialFilesFromCommandLine() {
@@ -778,161 +641,78 @@ void App::openInitialFilesFromCommandLine() {
     if (lastOpened != 0) {
         activateDocument(lastOpened);
     } else if (!error.empty()) {
-        ui.statusOverride = error;
+        setStatus(error, 10.0);
     }
 }
 
 void App::saveConfig() {
     std::string error;
     if (!core::saveUserConfig(config, &error)) {
-        OutputDebugStringA((error + "\n").c_str());
+        setStatus(error, 10.0);
     }
 }
 
 bool App::modelExists() const {
-    return paths::fileExists(modelPath());
+    return models_.exists();
 }
 
 bool App::directmlAvailable() const {
-    if (dmlChecked_) return dmlAvailable_;
-    dmlChecked_ = true;
-    if (!paths::fileExists(paths::exeDir() / L"DirectML.dll")) return false;
-    ml::OnnxRuntime runtime;
-    std::string error;
-    if (!runtime.load(paths::exeDir() / L"onnxruntime.dll", &error)) return false;
-    dmlAvailable_ = runtime.hasDml();
-    return dmlAvailable_;
+    return models_.directmlAvailable();
 }
 
 std::uintmax_t App::modelSize() const {
-    const auto path = modelPath();
-    if (path.empty()) return 0;
-    std::uintmax_t size = paths::fileSize(path);
-    auto external = path;
-    external += L"_data";
-    size += paths::fileSize(external);
-    return size;
+    return models_.size();
 }
 
 std::string App::modelSha() const {
-    return modelShaValue_;
+    return models_.sha();
 }
 
 void App::refreshModelSha() {
-    const auto path = modelPath();
-    if (path.empty()) {
-        if (!modelShaFuture_.valid()) {
-            modelShaPath_.clear();
-            modelShaValue_.clear();
-        }
-        return;
-    }
-    if (path == modelShaPath_ || modelShaFuture_.valid()) return;
-    modelShaPath_ = path;
-    modelShaValue_.clear();
-    modelShaFuture_ = std::async(
-        std::launch::async, [path] {
-            std::string error;
-            return std::make_pair(path, io::sha256Model(path, &error));
-        });
+    models_.refreshSha();
 }
 
 bool App::modelShaPending() const {
-    return modelShaFuture_.valid() && modelShaPath_ == modelPath();
+    return models_.shaPending();
 }
 
 std::filesystem::path App::modelPath() const {
-    if (config.modelSelectionCleared) return {};
-    if (!config.modelFile.empty()) return paths::fromUtf8(config.modelFile);
-    if (!config.modelDir.empty()) {
-        const auto selected = paths::fromUtf8(config.modelDir);
-        const auto resolved = resolveModelFile(selected);
-        if (!resolved.empty()) return resolved;
-        return selected / L"model.onnx";
-    }
-    return paths::modelFile();
+    return models_.path();
 }
 
 std::filesystem::path App::modelFolder() const {
-    const auto path = modelPath();
-    return path.empty() ? paths::modelDir() : path.parent_path();
+    return models_.folder();
 }
 
 void App::chooseModelFile() {
     const auto file = native_dialog::pickOnnxFile(
-        glfwGetWin32Window(window_), widen(tr("settings.choose_model_file")).c_str());
+        glfwGetWin32Window(window_),
+        paths::fromUtf8(tr("settings.choose_model_file")).c_str());
     if (!file) return;
     std::wstring extension = file->extension().wstring();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
     if (!paths::fileExists(*file) || extension != L".onnx") {
-        ui.statusOverride = tr("model.invalid_file");
+        setStatus(tr("model.invalid_file"), 6.0);
         return;
     }
 
-    config.modelFile = paths::toUtf8(*file);
-    config.modelDir.clear();
-    config.modelSelectionCleared = false;
-    modelInfoPath_.clear();
-    modelInfoAttempted_ = false;
-    modelShaPath_.clear();
-    modelShaValue_.clear();
-    ui.statusOverride.clear();
+    models_.selectFile(*file);
+    clearStatus();
     saveConfig();
 }
 
 void App::inspectModelInfo() {
-    const auto path = modelPath();
-    if (path.empty()) {
-        modelInfo_ = {};
-        modelInfoError_.clear();
-        modelInfoPath_.clear();
-        modelInfoAttempted_ = true;
-        return;
-    }
-    if (modelInfoAttempted_ && modelInfoPath_ == path) return;
-    modelInfoPath_ = path;
-    modelInfoAttempted_ = true;
-    modelInfo_ = {};
-    modelInfoError_.clear();
-
-    ml::OnnxRuntime runtime;
-    std::string error;
-    if (!runtime.load(paths::exeDir() / L"onnxruntime.dll", &error)) {
-        modelInfoError_ = error;
-        return;
-    }
-    ml::OnnxSession session;
-    if (!session.load(runtime, path, false, &error)) {
-        modelInfoError_ = error;
-        return;
-    }
-    modelInfo_ = session.info();
-    std::string weightError;
-    if (!inspectModelWeights(path, modelWeights_, &weightError)) {
-        modelWeights_ = {};
-    }
+    models_.inspect();
 }
 
 std::string App::modelType() const {
-    if (modelWeights_.fp16 > modelWeights_.fp32) return "fp16";
-    if (modelWeights_.fp32 > 0) return "fp32";
-    if (modelInfo_.inputType == "FLOAT16") return "fp16";
-    return "fp32";
+    return models_.type();
 }
 
 void App::clearModelSelection() {
-    config.modelFile.clear();
-    config.modelDir.clear();
-    config.modelSelectionCleared = true;
-    modelInfo_ = {};
-    modelWeights_ = {};
-    modelInfoPath_.clear();
-    modelInfoError_.clear();
-    modelInfoAttempted_ = false;
-    modelShaPath_.clear();
-    modelShaValue_.clear();
-    ui.statusOverride.clear();
+    models_.clearSelection();
+    clearStatus();
     saveConfig();
 }
 
@@ -949,11 +729,35 @@ std::string App::tr(std::string_view key) const {
 }
 
 std::string App::statusText() const {
-    if (!ui.statusOverride.empty()) return ui.statusOverride;
+    if (!ui.statusOverride.empty()) {
+        if (ui.statusBusy || glfwGetTime() < ui.statusExpiresAt) {
+            return ui.statusOverride;
+        }
+    }
     const core::Document* doc = activeDocument();
     if (!doc) return tr("status.no_task");
     return doc->name + "  ·  " + std::to_string(doc->width) + " × " +
            std::to_string(doc->height);
+}
+
+void App::setStatus(std::string text, double seconds, bool busy) {
+    if (text.empty()) {
+        clearStatus();
+        return;
+    }
+    ui.statusOverride = std::move(text);
+    ui.statusBusy = busy;
+    ui.statusExpiresAt = busy ? 0.0 : glfwGetTime() + seconds;
+}
+
+void App::clearStatus() {
+    ui.statusOverride.clear();
+    ui.statusExpiresAt = 0.0;
+    ui.statusBusy = false;
+}
+
+void App::clearStatusIfBusy() {
+    if (ui.statusBusy) clearStatus();
 }
 
 void App::centerWindow() {
@@ -979,7 +783,8 @@ void App::shutdown() {
         renderer_->shutdown();
         renderer_.reset();
     }
-    releaseGpuResources();
+    exports_.wait();
+    documents_.releaseGpuResources();
     if (imguiReady_) {
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();

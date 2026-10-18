@@ -5,24 +5,18 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <vector>
+
+#include "core/color.h"
 
 namespace gpu {
 namespace {
 
 std::array<float, 3> parseColor(const std::string& hex) {
-    std::array<float, 3> color{1.0f, 1.0f, 1.0f};
-    if (hex.size() != 7 || hex[0] != '#') return color;
-    for (int i = 0; i < 3; ++i) {
-        const unsigned int value = static_cast<unsigned int>(
-            std::strtoul(hex.substr(1 + i * 2, 2).c_str(), nullptr, 16));
-        color[static_cast<size_t>(i)] =
-            static_cast<float>(value) / 255.0f;
-    }
-    return color;
+    constexpr std::array<float, 3> kFallback{1.0f, 1.0f, 1.0f};
+    return core::parseHexColor(hex).value_or(kFallback);
 }
 
 size_t combine(size_t seed, size_t value) {
@@ -33,6 +27,9 @@ size_t hashFloat(float value) {
     return std::hash<float>{}(value);
 }
 
+// Every rendering input must be folded into this hash; otherwise changing a
+// setting can leave a stale preview on screen.
+std::size_t renderStateHash(const core::Document& doc);
 
 } // namespace
 
@@ -327,21 +324,27 @@ void Renderer::bindLights(const Shader& shader, const core::Document& doc) {
 }
 
 void Renderer::renderPasses(const core::Document& doc, core::View view) {
-    const int width = preview_.width;
-    const int height = preview_.height;
-    const int shadowWidth = shadow_.width;
-    const int shadowHeight = shadow_.height;
-    const float amplitude = std::max(doc.settings.height, 0.001f);
-    const float imageWidth = static_cast<float>(doc.width);
-    const float imageHeight = static_cast<float>(doc.height);
-
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
     glBindVertexArray(vao_);
 
+    passDepth(doc);
+    passNormal(doc);
+    passShadow(doc);
+    passBlur(doc);
+    passLighting(doc, view);
+
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Renderer::passDepth(const core::Document& doc) {
+    const float imageWidth = static_cast<float>(doc.width);
+    const float imageHeight = static_cast<float>(doc.height);
+
     glBindFramebuffer(GL_FRAMEBUFFER, height_.framebuffer);
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, preview_.width, preview_.height);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     depthShader_.use();
@@ -351,8 +354,7 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     glBindTexture(GL_TEXTURE_2D, depthTexture_);
     depthShader_.setInt("uColor", 0);
     depthShader_.setInt("uDepth", 1);
-    depthShader_.setVec2("uTexel", 1.0f / static_cast<float>(width),
-                         1.0f / static_cast<float>(height));
+    depthShader_.setVec2("uImageSize", imageWidth, imageHeight);
     const float depthLow =
         doc.settings.autoDepthRange ? 0.0f : doc.settings.depthMin;
     const float depthHigh =
@@ -363,9 +365,14 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     depthShader_.setInt("uInvert", doc.settings.invert ? 1 : 0);
     depthShader_.setInt("uLineAssist", doc.settings.lineAssist ? 1 : 0);
     glDrawArrays(GL_TRIANGLES, 0, 3);
+}
+
+void Renderer::passNormal(const core::Document& doc) {
+    const float imageWidth = static_cast<float>(doc.width);
+    const float imageHeight = static_cast<float>(doc.height);
 
     glBindFramebuffer(GL_FRAMEBUFFER, normal_.framebuffer);
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, preview_.width, preview_.height);
     glClear(GL_COLOR_BUFFER_BIT);
     normalShader_.use();
     glActiveTexture(GL_TEXTURE0);
@@ -374,21 +381,27 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     glBindTexture(GL_TEXTURE_2D, colorTexture_);
     normalShader_.setInt("uHeight", 0);
     normalShader_.setInt("uColor", 1);
-    normalShader_.setVec2("uTexel", 1.0f / static_cast<float>(width),
-                          1.0f / static_cast<float>(height));
+    normalShader_.setVec2("uTexel", 1.0f / static_cast<float>(preview_.width),
+                          1.0f / static_cast<float>(preview_.height));
     normalShader_.setVec2("uImageSize", imageWidth, imageHeight);
-    normalShader_.setFloat("uAmplitude", amplitude);
+    normalShader_.setFloat("uAmplitude",
+                           std::max(doc.settings.height, 0.001f));
     normalShader_.setFloat("uNormalStrength", doc.settings.normalStrength);
     normalShader_.setVec3("uFlips",
                           doc.settings.flipX ? -1.0f : 1.0f,
                           doc.settings.flipY ? -1.0f : 1.0f,
                           doc.settings.flipZ ? -1.0f : 1.0f);
     glDrawArrays(GL_TRIANGLES, 0, 3);
+}
+
+void Renderer::passShadow(const core::Document& doc) {
+    const float imageWidth = static_cast<float>(doc.width);
+    const float imageHeight = static_cast<float>(doc.height);
+    const GLenum buffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 
     glBindFramebuffer(GL_FRAMEBUFFER, shadow_.framebuffer);
-    glViewport(0, 0, shadowWidth, shadowHeight);
-    const GLenum shadowBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
-    glDrawBuffers(2, shadowBuffers);
+    glViewport(0, 0, shadow_.width, shadow_.height);
+    glDrawBuffers(2, buffers);
     glClear(GL_COLOR_BUFFER_BIT);
     shadowShader_.use();
     glActiveTexture(GL_TEXTURE0);
@@ -397,10 +410,11 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     glBindTexture(GL_TEXTURE_2D, colorTexture_);
     shadowShader_.setInt("uHeight", 0);
     shadowShader_.setInt("uColor", 1);
-    shadowShader_.setVec2("uTexel", 1.0f / static_cast<float>(width),
-                          1.0f / static_cast<float>(height));
+    shadowShader_.setVec2("uTexel", 1.0f / static_cast<float>(preview_.width),
+                          1.0f / static_cast<float>(preview_.height));
     shadowShader_.setVec2("uImageSize", imageWidth, imageHeight);
-    shadowShader_.setFloat("uAmplitude", amplitude);
+    shadowShader_.setFloat("uAmplitude",
+                           std::max(doc.settings.height, 0.001f));
     shadowShader_.setFloat("uBias", doc.settings.bias);
     shadowShader_.setFloat("uSoftness", doc.settings.softness);
     shadowShader_.setInt("uSteps", std::clamp(doc.settings.shadowSteps, 16, 192));
@@ -411,10 +425,14 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     shadowShader_.setInt("uShadowsEnabled", doc.settings.shadows ? 1 : 0);
     bindLights(shadowShader_, doc);
     glDrawArrays(GL_TRIANGLES, 0, 3);
+}
+
+void Renderer::passBlur(const core::Document& doc) {
+    const GLenum buffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 
     glBindFramebuffer(GL_FRAMEBUFFER, blur_.framebuffer);
-    glViewport(0, 0, shadowWidth, shadowHeight);
-    glDrawBuffers(2, shadowBuffers);
+    glViewport(0, 0, shadow_.width, shadow_.height);
+    glDrawBuffers(2, buffers);
     glClear(GL_COLOR_BUFFER_BIT);
     blurShader_.use();
     glActiveTexture(GL_TEXTURE0);
@@ -429,13 +447,19 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     blurShader_.setInt("uShadow1", 1);
     blurShader_.setInt("uHeight", 2);
     blurShader_.setInt("uColor", 3);
-    blurShader_.setVec2("uTexel", 1.0f / static_cast<float>(shadowWidth),
-                         1.0f / static_cast<float>(shadowHeight));
-    blurShader_.setFloat("uAmplitude", amplitude);
+    blurShader_.setVec2("uTexel", 1.0f / static_cast<float>(shadow_.width),
+                         1.0f / static_cast<float>(shadow_.height));
+    blurShader_.setFloat("uAmplitude",
+                         std::max(doc.settings.height, 0.001f));
     glDrawArrays(GL_TRIANGLES, 0, 3);
+}
+
+void Renderer::passLighting(const core::Document& doc, core::View view) {
+    const float imageWidth = static_cast<float>(doc.width);
+    const float imageHeight = static_cast<float>(doc.height);
 
     glBindFramebuffer(GL_FRAMEBUFFER, preview_.framebuffer);
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, preview_.width, preview_.height);
     glClear(GL_COLOR_BUFFER_BIT);
     lightingShader_.use();
     glActiveTexture(GL_TEXTURE0);
@@ -454,7 +478,8 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     lightingShader_.setInt("uBlur0", 3);
     lightingShader_.setInt("uBlur1", 4);
     lightingShader_.setVec2("uImageSize", imageWidth, imageHeight);
-    lightingShader_.setFloat("uAmplitude", amplitude);
+    lightingShader_.setFloat("uAmplitude",
+                             std::max(doc.settings.height, 0.001f));
     const auto ambient = parseColor(doc.settings.ambientColor);
     lightingShader_.setVec3("uAmbientColor", ambient.data());
     lightingShader_.setFloat("uAmbient", doc.settings.ambient);
@@ -471,9 +496,6 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
     lightingShader_.setInt("uShadowsEnabled", doc.settings.shadows ? 1 : 0);
     bindLights(lightingShader_, doc);
     glDrawArrays(GL_TRIANGLES, 0, 3);
-
-    glBindVertexArray(0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 bool Renderer::renderExport(const core::Document& doc, core::View view,
@@ -512,7 +534,7 @@ bool Renderer::renderPreview(const core::Document& doc, std::string* error) {
         return false;
     }
 
-    const std::size_t hash = stateHash(doc);
+    const std::size_t hash = renderStateHash(doc);
     if (hasRendered_ && hash == lastStateHash_) return true;
 
     renderPasses(doc, doc.view);
@@ -521,7 +543,9 @@ bool Renderer::renderPreview(const core::Document& doc, std::string* error) {
     return true;
 }
 
-std::size_t Renderer::stateHash(const core::Document& doc) {
+namespace {
+
+std::size_t renderStateHash(const core::Document& doc) {
     std::size_t seed = 0;
     const auto addFloat = [&](float value) {
         seed = combine(seed, hashFloat(value));
@@ -535,6 +559,8 @@ std::size_t Renderer::stateHash(const core::Document& doc) {
 
     seed = combine(seed, std::hash<uint64_t>{}(doc.id));
     seed = combine(seed, std::hash<uint64_t>{}(doc.depthRevision));
+    addInt(doc.width);
+    addInt(doc.height);
     addInt(static_cast<int>(doc.view));
     addInt(doc.selectedLight);
     addFloat(doc.settings.comparison);
@@ -577,5 +603,7 @@ std::size_t Renderer::stateHash(const core::Document& doc) {
     }
     return seed;
 }
+
+} // namespace
 
 } // namespace gpu

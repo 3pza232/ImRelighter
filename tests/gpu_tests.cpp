@@ -172,6 +172,33 @@ void testNormalFlip(gpu::Renderer& renderer) {
           "flipX changes derived normal X channel");
 }
 
+void testDepthSmoothing(gpu::Renderer& renderer) {
+    core::Document doc = makeDocument();
+    for (int y = 0; y < doc.height; ++y) {
+        for (int x = 0; x < doc.width; ++x) {
+            // A low-contrast checkerboard keeps the edge-preserving weights
+            // active while making the smoothing effect visible in 8-bit output.
+            const int sourceY = doc.height - 1 - y;
+            doc.depth[static_cast<size_t>(sourceY) * doc.width + x] =
+                ((x + y) & 1) ? 0.52f : 0.48f;
+        }
+    }
+    ++doc.depthRevision;
+    doc.settings.smooth = 0.0f;
+    const auto before = render(renderer, doc, core::View::Depth);
+    doc.settings.smooth = 1.0f;
+    const auto after = render(renderer, doc, core::View::Depth);
+    if (before.empty() || after.empty()) return;
+
+    int maxDifference = 0;
+    for (size_t i = 0; i < before.size(); i += 4) {
+        maxDifference = std::max(
+            maxDifference,
+            std::abs(static_cast<int>(before[i]) - static_cast<int>(after[i])));
+    }
+    check(maxDifference >= 1, "smooth > 0 changes the depth view");
+}
+
 void testQualitySettings(gpu::Renderer& renderer) {
     core::Document doc = makeDocument();
     doc.settings.previewLongEdge = 1024;
@@ -196,7 +223,7 @@ void testAlpha(gpu::Renderer& renderer) {
 int main() {
     if (!glfwInit()) {
         std::cerr << "SKIP: GLFW init failed\n";
-        return 0;
+        return 77;
     }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
@@ -207,14 +234,14 @@ int main() {
     if (!window) {
         std::cerr << "SKIP: no OpenGL 4.5 context\n";
         glfwTerminate();
-        return 0;
+        return 77;
     }
     glfwMakeContextCurrent(window);
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
         std::cerr << "SKIP: GLAD load failed\n";
         glfwDestroyWindow(window);
         glfwTerminate();
-        return 0;
+        return 77;
     }
 
     gpu::Renderer renderer;
@@ -258,6 +285,7 @@ int main() {
 
     testFlatShadow(renderer);
     testDepthOrientation(renderer);
+    testDepthSmoothing(renderer);
     testNormalFlip(renderer);
     testQualitySettings(renderer);
     testAlpha(renderer);

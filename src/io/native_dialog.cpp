@@ -2,13 +2,10 @@
 
 #include <windows.h>
 #include <commdlg.h>
-#include <objbase.h>
 #include <shellapi.h>
-#include <shobjidl.h>
 
 #include <array>
 #include <cwchar>
-#include <cstring>
 
 namespace native_dialog {
 
@@ -92,45 +89,6 @@ std::optional<std::filesystem::path> pickOnnxFile(void* owner,
                    OFN_NOCHANGEDIR;
     if (!GetOpenFileNameW(&dialog)) return std::nullopt;
     return std::filesystem::path(file.data());
-}
-
-std::optional<std::filesystem::path> pickFolder(void* owner,
-                                                const wchar_t* title) {
-    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED |
-                                                     COINIT_DISABLE_OLE1DDE);
-    const bool shouldUninitialize = SUCCEEDED(init) || init == S_FALSE;
-    if (FAILED(init) && init != RPC_E_CHANGED_MODE) return std::nullopt;
-
-    IFileOpenDialog* dialog = nullptr;
-    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr,
-                                  CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog));
-    if (FAILED(hr) || !dialog) {
-        if (shouldUninitialize) CoUninitialize();
-        return std::nullopt;
-    }
-
-    FILEOPENDIALOGOPTIONS options = 0;
-    dialog->GetOptions(&options);
-    dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM |
-                       FOS_PATHMUSTEXIST);
-    dialog->SetTitle(title);
-
-    std::optional<std::filesystem::path> result;
-    if (SUCCEEDED(dialog->Show(static_cast<HWND>(owner)))) {
-        IShellItem* item = nullptr;
-        if (SUCCEEDED(dialog->GetResult(&item)) && item) {
-            PWSTR path = nullptr;
-            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path) {
-                result = std::filesystem::path(path);
-                CoTaskMemFree(path);
-            }
-            item->Release();
-        }
-    }
-
-    dialog->Release();
-    if (shouldUninitialize) CoUninitialize();
-    return result;
 }
 
 void openInExplorer(const std::filesystem::path& path) {

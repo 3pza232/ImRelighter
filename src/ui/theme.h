@@ -53,8 +53,8 @@ inline ImU32 u32(const ImVec4& color, float alpha = 1.0f) {
         ImVec4(color.x, color.y, color.z, color.w * alpha));
 }
 
-Mode mode();
 void setMode(Mode mode);
+void setScale(float scale);
 void apply();
 
 } // namespace theme

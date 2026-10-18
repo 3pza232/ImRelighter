@@ -16,6 +16,19 @@ int roundToMultiple(float value, int multiple) {
     return std::max(unit, steps * unit);
 }
 
+stbir_filter filterFor(Resample resample) {
+    switch (resample) {
+        case Resample::Nearest: return STBIR_FILTER_POINT_SAMPLE;
+        case Resample::Lanczos: return STBIR_FILTER_CATMULLROM;
+        case Resample::Bilinear: return STBIR_FILTER_TRIANGLE;
+        case Resample::Bicubic: return STBIR_FILTER_CATMULLROM;
+        case Resample::Box: return STBIR_FILTER_BOX;
+        case Resample::Hamming: return STBIR_FILTER_MITCHELL;
+        case Resample::Default: break;
+    }
+    return STBIR_FILTER_DEFAULT;
+}
+
 } // namespace
 
 bool preprocess(const uint8_t* rgba, int width, int height,
@@ -37,20 +50,34 @@ bool preprocess(const uint8_t* rgba, int width, int height,
     }
 
     const int newWidth =
-        roundToMultiple(scaleWidth * static_cast<float>(width), config.sizeMultiple);
+        config.doResize
+            ? roundToMultiple(scaleWidth * static_cast<float>(width),
+                              config.sizeMultiple)
+            : width;
     const int newHeight =
-        roundToMultiple(scaleHeight * static_cast<float>(height), config.sizeMultiple);
+        config.doResize
+            ? roundToMultiple(scaleHeight * static_cast<float>(height),
+                              config.sizeMultiple)
+            : height;
 
-    std::vector<uint8_t> resized(static_cast<size_t>(newWidth) * newHeight * 4);
-    if (!stbir_resize_uint8_linear(rgba, width, height, 0, resized.data(),
-                                   newWidth, newHeight, 0, STBIR_RGBA)) {
-        if (error) *error = "Image resize failed.";
-        return false;
+    const size_t pixelCount = static_cast<size_t>(newWidth) * newHeight;
+    std::vector<uint8_t> resized(pixelCount * 4);
+    if (config.doResize) {
+        // stb_image_resize has no Lanczos/Hamming kernels. Use the closest
+        // available filters rather than silently falling back to bilinear.
+        if (!stbir_resize(rgba, width, height, 0, resized.data(), newWidth,
+                          newHeight, 0, STBIR_RGBA, STBIR_TYPE_UINT8,
+                          STBIR_EDGE_CLAMP, filterFor(config.resample))) {
+            if (error) *error = "Image resize failed.";
+            return false;
+        }
+    } else {
+        std::copy(rgba, rgba + pixelCount * 4, resized.begin());
     }
 
     result.width = newWidth;
     result.height = newHeight;
-    const size_t plane = static_cast<size_t>(newWidth) * newHeight;
+    const size_t plane = pixelCount;
     result.tensor.resize(plane * 3);
 
     const float* mean = config.mean;
@@ -59,7 +86,7 @@ bool preprocess(const uint8_t* rgba, int width, int height,
         for (size_t i = 0; i < plane; ++i) {
             float value =
                 static_cast<float>(resized[i * 4 + static_cast<size_t>(channel)]);
-            if (config.rescale) value /= 255.0f;
+            if (config.rescale) value *= config.rescaleFactor;
             if (config.normalize) value = (value - mean[channel]) / stddev[channel];
             result.tensor[static_cast<size_t>(channel) * plane + i] = value;
         }

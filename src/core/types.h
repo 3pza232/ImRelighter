@@ -16,7 +16,7 @@ enum class ExportKind { Lit, Normal, Depth, Lighting, Shadow };
 
 struct Light {
     int id = 1;
-    std::string name = "Light 1";
+
     Vec3 position{-0.6f, 0.65f, 1.6f};
     std::string color = "#fff0d8";
     float intensity = 1.8f;
@@ -72,7 +72,6 @@ inline Settings defaults() {
 inline Light makeLight(int id, Vec3 position = {-0.6f, 0.65f, 1.6f}) {
     Light light;
     light.id = id;
-    light.name = "Light " + std::to_string(id);
     light.position = position;
     return light;
 }

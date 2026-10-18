@@ -127,6 +127,9 @@ bool vector3Control(const char* id, float values[3], const float mins[3],
 
     ImGui::SetCursorScreenPos(
         ImVec2(start.x, start.y + labelHeight + fieldGap + fieldHeight));
+    // Submit a zero-size item so ImGui records the new cursor position as
+    // content instead of treating it as an out-of-bounds cursor move.
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
     ImGui::PopID();
     return changed;
 }

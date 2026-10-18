@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 #include "core/types.h"
@@ -20,6 +21,11 @@ struct UserConfig {
 
 bool loadUserConfig(UserConfig& config, std::string* error = nullptr);
 bool saveUserConfig(const UserConfig& config, std::string* error = nullptr);
+bool loadUserConfigFrom(const std::filesystem::path& path, UserConfig& config,
+                        std::string* error = nullptr);
+bool saveUserConfigTo(const std::filesystem::path& path,
+                      const UserConfig& config,
+                      std::string* error = nullptr);
 
 const char* backendKey(Backend backend);
 const char* themeKey(Theme theme);

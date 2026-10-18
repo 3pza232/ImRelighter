@@ -3,6 +3,8 @@
 namespace theme {
 namespace {
 
+float styleScale = 1.0f;
+
 struct Palette {
     ImVec4 bg, canvas, panel, panel2, border, text, muted, accent, accentCool;
     ImVec4 accentHover, danger, dangerHover, ok, ink, closeText, taskHover;
@@ -99,8 +101,6 @@ Palette lightPalette() {
     return p;
 }
 
-Mode currentMode = Mode::Dark;
-
 void assign(const Palette& p) {
     bg = p.bg;
     canvas = p.canvas;
@@ -144,16 +144,21 @@ void assign(const Palette& p) {
 
 } // namespace
 
-Mode mode() { return currentMode; }
-
 void setMode(Mode mode) {
-    currentMode = mode;
     assign(mode == Mode::Light ? lightPalette() : darkPalette());
+    apply();
+}
+
+void setScale(float scale) {
+    styleScale = scale < 1.0f ? 1.0f : (scale > 3.0f ? 3.0f : scale);
     apply();
 }
 
 void apply() {
     ImGuiStyle& style = ImGui::GetStyle();
+    // Start from defaults so repeated theme switches cannot compound the
+    // DPI scaling applied at the end of this function.
+    style = ImGuiStyle{};
 
     style.WindowRounding = 0.0f;
     style.ChildRounding = 8.0f;
@@ -244,6 +249,10 @@ void apply() {
 
     style.AntiAliasedLines = true;
     style.AntiAliasedFill = true;
+
+    // Layout constants in ui.cpp use the same factor, so style metrics and
+    // panels stay aligned at 125%, 150%, and 200% scaling.
+    style.ScaleAllSizes(styleScale);
 }
 
 } // namespace theme

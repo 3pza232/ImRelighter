@@ -56,6 +56,7 @@ private:
     std::filesystem::path runtimeDll_;
     std::thread worker_;
     std::mutex mutex_;
+    std::mutex sessionMutex_;
     std::condition_variable condition_;
     std::optional<InferenceJob> pending_;
     std::optional<InferenceResult> result_;

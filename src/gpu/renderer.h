@@ -56,11 +56,14 @@ private:
                        std::string* error);
     bool ensurePreviewTargets(const core::Document& doc, std::string* error);
     void renderPasses(const core::Document& doc, core::View view);
+    void passDepth(const core::Document& doc);
+    void passNormal(const core::Document& doc);
+    void passShadow(const core::Document& doc);
+    void passBlur(const core::Document& doc);
+    void passLighting(const core::Document& doc, core::View view);
 
     void bindLights(const Shader& shader, const core::Document& doc);
     int selectedLightIndex(const core::Document& doc) const;
-
-    static std::size_t stateHash(const core::Document& doc);
 
     Shader depthShader_;
     Shader normalShader_;

@@ -15,9 +15,6 @@ std::optional<std::filesystem::path> savePngDialog(
 std::optional<std::filesystem::path> pickOnnxFile(
     void* owner, const wchar_t* title = L"Select ONNX Model");
 
-std::optional<std::filesystem::path> pickFolder(
-    void* owner, const wchar_t* title = L"Select Folder");
-
 void openInExplorer(const std::filesystem::path& path);
 
 } // namespace native_dialog

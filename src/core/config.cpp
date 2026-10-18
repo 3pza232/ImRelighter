@@ -38,7 +38,11 @@ Backend backendFromCode(const std::string& code) {
 }
 
 bool loadUserConfig(UserConfig& config, std::string* error) {
-    const auto path = paths::configFile();
+    return loadUserConfigFrom(paths::configFile(), config, error);
+}
+
+bool loadUserConfigFrom(const std::filesystem::path& path, UserConfig& config,
+                        std::string* error) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return true; // No config yet is not an error.
 
@@ -84,6 +88,11 @@ bool loadUserConfig(UserConfig& config, std::string* error) {
 }
 
 bool saveUserConfig(const UserConfig& config, std::string* error) {
+    return saveUserConfigTo(paths::configFile(), config, error);
+}
+
+bool saveUserConfigTo(const std::filesystem::path& path,
+                      const UserConfig& config, std::string* error) {
     try {
         nlohmann::json json;
         json["version"] = 1;
@@ -96,12 +105,41 @@ bool saveUserConfig(const UserConfig& config, std::string* error) {
         json["maxTasks"] = std::clamp(config.maxTasks, 1, 500);
         json["memoryLimitGb"] = std::clamp(config.memoryLimitGb, 1, 16);
 
-        std::ofstream stream(paths::configFile(), std::ios::binary | std::ios::trunc);
-        if (!stream) {
-            if (error) *error = "Cannot write config file";
-            return false;
+        auto temporary = path;
+        temporary += L".tmp";
+        {
+            std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+            if (!stream) {
+                if (error) *error = "Cannot write config file";
+                return false;
+            }
+            stream << json.dump(2) << '\n';
+            stream.flush();
+            if (!stream) {
+                stream.close();
+                std::error_code ignored;
+                std::filesystem::remove(temporary, ignored);
+                if (error) *error = "Failed to write config file";
+                return false;
+            }
         }
-        stream << json.dump(2) << '\n';
+
+        std::error_code renameError;
+        std::filesystem::rename(temporary, path, renameError);
+        if (renameError) {
+            // Windows does not replace an existing destination atomically.
+            std::error_code ignored;
+            std::filesystem::remove(path, ignored);
+            std::filesystem::rename(temporary, path, renameError);
+            if (renameError) {
+                std::filesystem::remove(temporary, ignored);
+                if (error) {
+                    *error = "Cannot replace config file: " +
+                             renameError.message();
+                }
+                return false;
+            }
+        }
         return true;
     } catch (const std::exception& e) {
         if (error) *error = std::string("Failed to save config: ") + e.what();

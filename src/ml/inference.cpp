@@ -24,7 +24,10 @@ void InferenceService::stop() {
         pending_.reset();
     }
     cancelRequested_ = true;
-    session_.requestTerminate();
+    {
+        std::lock_guard lock(sessionMutex_);
+        session_.requestTerminate();
+    }
     condition_.notify_all();
     if (worker_.joinable()) worker_.join();
     stopping_ = false;
@@ -33,7 +36,10 @@ void InferenceService::stop() {
 bool InferenceService::submit(InferenceJob job) {
     if (busy_.exchange(true)) return false;
     cancelRequested_ = false;
-    session_.clearTerminate();
+    {
+        std::lock_guard lock(sessionMutex_);
+        session_.clearTerminate();
+    }
 
     {
         std::lock_guard lock(mutex_);
@@ -46,7 +52,10 @@ bool InferenceService::submit(InferenceJob job) {
 
 void InferenceService::cancel() {
     if (!busy_.load()) return;
+    // Set the flag before touching the session so a worker that is loading a
+    // model observes the cancellation as soon as load() returns.
     cancelRequested_ = true;
+    std::lock_guard lock(sessionMutex_);
     session_.requestTerminate();
 }
 
@@ -84,12 +93,18 @@ void InferenceService::workerLoop() {
             if (loadedModel_ != job.modelPath || loadedDml_ != job.useDml) {
                 std::string error;
                 bool useDml = job.useDml;
-                if (!session_.load(runtime_, job.modelPath, useDml, &error)) {
+                const auto loadSession = [&](bool dml, std::string& loadError) {
+                    // UI-thread cancellation must not race with release()/
+                    // CreateSession() while the session pointers are rebuilt.
+                    std::lock_guard lock(sessionMutex_);
+                    return session_.load(runtime_, job.modelPath, dml,
+                                         &loadError);
+                };
+                if (!loadSession(useDml, error)) {
                     if (useDml && job.allowCpuFallback) {
                         useDml = false;
                         error.clear();
-                        if (!session_.load(runtime_, job.modelPath, useDml,
-                                           &error)) {
+                        if (!loadSession(useDml, error)) {
                             loadedModel_.clear();
                             loadedDml_ = false;
                             result.error = error;

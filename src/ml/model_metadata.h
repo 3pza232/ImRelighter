@@ -9,9 +9,6 @@ struct WeightInfo {
     int fp16 = 0;
     int fp32 = 0;
     int other = 0;
-
-    bool hasFp16() const { return fp16 > 0; }
-    bool hasFp32() const { return fp32 > 0; }
 };
 
 bool inspectModelWeights(const std::filesystem::path& modelPath,

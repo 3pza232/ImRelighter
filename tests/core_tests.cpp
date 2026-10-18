@@ -3,14 +3,21 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include "core/i18n.h"
+#include "core/config.h"
+#include "io/exif.h"
 #include "io/hash.h"
 #include "io/image_io.h"
+#include "io/image_limits.h"
+#include "io/image_probe.h"
 #include "io/png_export.h"
+#include "ml/half.h"
 #include "ml/model_config.h"
+#include "ml/model_metadata.h"
 #include "ml/preprocess.h"
 #include "nlohmann/json.hpp"
 
@@ -43,6 +50,39 @@ void testModelConfig() {
               processor.sizeMultiple == 14 && processor.rescale &&
               processor.normalize,
           "preprocessor_config values load");
+    check(processor.doResize && processor.resample == ml::Resample::Bicubic,
+          "preprocessor resize mode loads");
+    check(near(processor.rescaleFactor, 1.0f / 255.0f),
+          "preprocessor rescale factor loads");
+
+    const auto directory =
+        std::filesystem::temp_directory_path() / "imrelighter-preprocess-test";
+    std::error_code ec;
+    std::filesystem::create_directories(directory, ec);
+    const auto configPath = directory / L"preprocessor_config.json";
+    {
+        std::ofstream stream(configPath, std::ios::binary);
+        stream << R"({"preprocess": {"size": 640, "ensure_multiple_of": 32,
+                    "resample": 2, "rescale_factor": 0.5}})";
+    }
+    const ml::ModelConfig nested =
+        ml::loadModelConfig(directory / L"model.onnx");
+    check(nested.loaded && nested.inputSize == 640 &&
+              nested.sizeMultiple == 32 &&
+              nested.resample == ml::Resample::Bilinear &&
+              near(nested.rescaleFactor, 0.5f),
+          "nested preprocess values load");
+
+    {
+        std::ofstream stream(configPath, std::ios::binary);
+        stream << R"({"do_resize": false, "resample": 0})";
+    }
+    const ml::ModelConfig noResize =
+        ml::loadModelConfig(directory / L"model.onnx");
+    check(noResize.loaded && !noResize.doResize &&
+              noResize.resample == ml::Resample::Nearest,
+          "preprocessor disable-resize values load");
+    std::filesystem::remove_all(directory, ec);
 }
 
 void testPreprocessShape() {
@@ -57,6 +97,28 @@ void testPreprocessShape() {
                                      static_cast<size_t>(result.height) * 3,
           "preprocess tensor is NCHW 3-plane");
     check(std::isfinite(result.tensor.front()), "preprocess tensor is finite");
+
+    ml::ModelConfig noResize = ml::defaults();
+    noResize.doResize = false;
+    ml::PreprocessResult passthrough;
+    check(ml::preprocess(rgba.data(), 100, 50, passthrough, &error, noResize),
+          "preprocess without resize succeeds");
+    check(passthrough.width == 100 && passthrough.height == 50,
+          "preprocess without resize preserves dimensions");
+    check(passthrough.tensor.size() == 100u * 50u * 3u,
+          "preprocess without resize keeps tensor shape");
+
+    const std::vector<uint8_t> single = {10, 0, 0, 255};
+    ml::ModelConfig scaled = ml::defaults();
+    scaled.doResize = false;
+    scaled.rescaleFactor = 0.5f;
+    scaled.normalize = false;
+    ml::PreprocessResult scaledResult;
+    check(ml::preprocess(single.data(), 1, 1, scaledResult, &error, scaled),
+          "preprocess applies custom rescale factor");
+    check(scaledResult.tensor.size() == 3 &&
+              near(scaledResult.tensor[0], 5.0f),
+          "preprocess uses configured rescale factor");
 }
 
 void testPostprocessOrientation() {
@@ -188,6 +250,195 @@ void testI18nParity() {
           "i18n values are non-empty");
 }
 
+void testExifOrientation() {
+    const int width = 2;
+    const int height = 3;
+    std::vector<uint8_t> source(static_cast<size_t>(width) * height * 4);
+    for (int i = 0; i < width * height; ++i) {
+        source[static_cast<size_t>(i) * 4 + 0] = static_cast<uint8_t>(i);
+        source[static_cast<size_t>(i) * 4 + 3] = 255;
+    }
+
+    struct Case {
+        int orientation;
+        int width;
+        int height;
+        std::vector<int> expected;
+    };
+    const Case cases[] = {
+        {1, 2, 3, {0, 1, 2, 3, 4, 5}},
+        {2, 2, 3, {1, 0, 3, 2, 5, 4}},
+        {3, 2, 3, {5, 4, 3, 2, 1, 0}},
+        {4, 2, 3, {4, 5, 2, 3, 0, 1}},
+        {5, 3, 2, {0, 2, 4, 1, 3, 5}},
+        {6, 3, 2, {4, 2, 0, 5, 3, 1}},
+        {7, 3, 2, {5, 3, 1, 4, 2, 0}},
+        {8, 3, 2, {1, 3, 5, 0, 2, 4}},
+    };
+
+    for (const Case& item : cases) {
+        auto pixels = source;
+        int w = width;
+        int h = height;
+        check(io::applyExifOrientation(pixels, w, h, item.orientation),
+              ("apply EXIF orientation " +
+               std::to_string(item.orientation)).c_str());
+        check(w == item.width && h == item.height,
+              ("EXIF orientation dimensions " +
+               std::to_string(item.orientation)).c_str());
+        for (size_t i = 0; i < item.expected.size(); ++i) {
+            check(pixels[i * 4] == item.expected[i],
+                  ("EXIF pixel mapping " +
+                   std::to_string(item.orientation)).c_str());
+        }
+    }
+
+    auto invalid = source;
+    int invalidWidth = width;
+    int invalidHeight = height;
+    check(!io::applyExifOrientation(invalid, invalidWidth, invalidHeight, 9),
+          "invalid EXIF orientation is rejected");
+}
+
+std::vector<uint8_t> makeExifJpeg(bool littleEndian, int orientation) {
+    const auto push16 = [&](std::vector<uint8_t>& out, int value) {
+        if (littleEndian) {
+            out.push_back(static_cast<uint8_t>(value & 0xFF));
+            out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+        } else {
+            out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+            out.push_back(static_cast<uint8_t>(value & 0xFF));
+        }
+    };
+    const auto push32 = [&](std::vector<uint8_t>& out, uint32_t value) {
+        if (littleEndian) {
+            out.push_back(static_cast<uint8_t>(value & 0xFF));
+            out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+            out.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+            out.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+        } else {
+            out.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+            out.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+            out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+            out.push_back(static_cast<uint8_t>(value & 0xFF));
+        }
+    };
+
+    std::vector<uint8_t> tiff;
+    if (littleEndian) {
+        tiff.push_back('I');
+        tiff.push_back('I');
+    } else {
+        tiff.push_back('M');
+        tiff.push_back('M');
+    }
+    push16(tiff, 42);
+    push32(tiff, 8);
+    push16(tiff, 1);          // one IFD0 entry
+    push16(tiff, 0x0112);     // Orientation
+    push16(tiff, 3);          // SHORT
+    push32(tiff, 1);
+    push16(tiff, orientation);
+    push16(tiff, 0);          // inline value padding
+    push32(tiff, 0);          // no next IFD
+
+    std::vector<uint8_t> jpeg = {0xFF, 0xD8, 0xFF, 0xE1};
+    const size_t length = 2 + 6 + tiff.size();
+    jpeg.push_back(static_cast<uint8_t>((length >> 8) & 0xFF));
+    jpeg.push_back(static_cast<uint8_t>(length & 0xFF));
+    jpeg.insert(jpeg.end(), {'E', 'x', 'i', 'f', 0, 0});
+    jpeg.insert(jpeg.end(), tiff.begin(), tiff.end());
+    jpeg.insert(jpeg.end(), {0xFF, 0xD9});
+    return jpeg;
+}
+
+void testExifParsing() {
+    const auto little = makeExifJpeg(true, 6);
+    check(io::readJpegOrientation(little.data(), little.size()) == 6,
+          "EXIF little-endian orientation");
+
+    const auto big = makeExifJpeg(false, 8);
+    check(io::readJpegOrientation(big.data(), big.size()) == 8,
+          "EXIF big-endian orientation");
+
+    auto truncated = little;
+    truncated.resize(10);
+    check(io::readJpegOrientation(truncated.data(), truncated.size()) == 0,
+          "truncated EXIF is rejected");
+
+    const uint8_t notJpeg[] = {0x89, 'P', 'N', 'G'};
+    check(io::readJpegOrientation(notJpeg, sizeof(notJpeg)) == 0,
+          "non-JPEG has no EXIF orientation");
+}
+
+void testHalfConversion() {
+    check(ml::floatToHalf(0.0f) == 0x0000, "half +0");
+    check(ml::floatToHalf(-0.0f) == 0x8000, "half -0");
+    check(ml::floatToHalf(1.0f) == 0x3c00, "half 1.0");
+    check(ml::floatToHalf(-2.0f) == 0xc000, "half -2.0");
+    check(ml::floatToHalf(65504.0f) == 0x7bff, "half max finite");
+    check(ml::floatToHalf(65519.0f) == 0x7bff, "half rounds below overflow");
+    check(ml::floatToHalf(65520.0f) == 0x7c00, "half overflow tie");
+    check(ml::floatToHalf(std::numeric_limits<float>::infinity()) == 0x7c00,
+          "half +infinity");
+    check(ml::floatToHalf(-std::numeric_limits<float>::infinity()) == 0xfc00,
+          "half -infinity");
+
+    const std::uint16_t nan = ml::floatToHalf(
+        std::numeric_limits<float>::quiet_NaN());
+    check((nan & 0x7c00u) == 0x7c00u && (nan & 0x03ffu) != 0,
+          "half NaN");
+
+    check(ml::floatToHalf(std::ldexp(1.0f, -24)) == 0x0001,
+          "half minimum subnormal");
+    check(ml::floatToHalf(std::ldexp(1.0f, -25)) == 0x0000,
+          "half subnormal tie rounds to even");
+
+    for (std::uint32_t bits = 0; bits <= 0x7bffu; ++bits) {
+        check(ml::floatToHalf(ml::halfToFloat(static_cast<std::uint16_t>(bits))) ==
+                  bits,
+              "half positive round-trip");
+        const std::uint16_t negative =
+            static_cast<std::uint16_t>(bits | 0x8000u);
+        check(ml::floatToHalf(ml::halfToFloat(negative)) == negative,
+              "half negative round-trip");
+    }
+}
+
+void testImageProbe() {
+    const std::uint8_t png[24] = {0x89, 'P', 'N',  'G',  0x0d, 0x0a, 0x1a,
+                                  0x0a, 0x00, 0x00, 0x00, 0x0d, 'I',  'H',
+                                  'D',  'R',  0x00, 0x00, 0x0a, 0x00, 0x00,
+                                  0x00, 0x14, 0x00};
+    int width = 0;
+    int height = 0;
+    check(io::probeImageDimensions(png, sizeof(png), width, height),
+          "PNG header probe succeeds");
+    check(width == 2560 && height == 5120, "PNG header dimensions");
+
+    const std::uint8_t jpeg[] = {
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0,
+        0x00, 0x0b, 0x08, 0x00, 0x0a, 0x00, 0x0c, 0x01, 0x01, 0x11,
+        0x00};
+    check(io::probeImageDimensions(jpeg, sizeof(jpeg), width, height),
+          "JPEG SOF probe succeeds");
+    check(width == 12 && height == 10, "JPEG SOF dimensions");
+
+    std::uint8_t oversized[24] = {};
+    std::copy(png, png + sizeof(png), oversized);
+    oversized[18] = 0x17;
+    oversized[19] = 0x70;
+    oversized[22] = 0x13;
+    oversized[23] = 0x88;
+    check(io::probeImageDimensions(oversized, sizeof(oversized), width, height),
+          "oversized PNG header probe succeeds");
+    check(io::exceedsPixelLimit(width, height),
+          "oversized header is rejected by the pixel limit");
+
+    check(!io::probeImageDimensions(nullptr, 0, width, height),
+          "empty header probe is rejected");
+}
+
 void testDepthPngHeader() {
     const auto path = std::filesystem::temp_directory_path() /
                       "imrelighter-depth-test.png";
@@ -231,9 +482,135 @@ void testDepthPngHeader() {
     std::filesystem::remove(path, code);
 }
 
+void testRgbaPngRoundTrip() {
+    const auto path =
+        std::filesystem::temp_directory_path() / "imrelighter-rgba-test.png";
+    const std::vector<uint8_t> pixels = {
+        255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0,
+        16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192,
+    };
+    std::string error;
+    check(io::writeRgba8Png(path, pixels, 3, 2, &error),
+          "write RGBA PNG succeeds");
+
+    const auto loaded = io::loadImage(path, &error);
+    check(loaded.has_value(), "RGBA PNG decodes");
+    if (loaded) {
+        check(loaded->width == 3 && loaded->height == 2,
+              "RGBA PNG dimensions round-trip");
+        check(loaded->rgba == pixels, "RGBA PNG pixels round-trip");
+    }
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+namespace {
+
+void appendVarint(std::vector<uint8_t>& out, uint64_t value) {
+    while (value >= 0x80) {
+        out.push_back(static_cast<uint8_t>(value) | 0x80);
+        value >>= 7;
+    }
+    out.push_back(static_cast<uint8_t>(value));
+}
+
+void appendTensor(std::vector<uint8_t>& graph, int dataType) {
+    std::vector<uint8_t> tensor;
+    appendVarint(tensor, 2u << 3); // TensorProto.data_type
+    appendVarint(tensor, static_cast<uint64_t>(dataType));
+    appendVarint(graph, (5u << 3) | 2u); // GraphProto.initializer
+    appendVarint(graph, tensor.size());
+    graph.insert(graph.end(), tensor.begin(), tensor.end());
+}
+
+} // namespace
+
+void testModelMetadata() {
+    std::vector<uint8_t> graph;
+    appendTensor(graph, 10); // FLOAT16
+    appendTensor(graph, 10);
+    appendTensor(graph, 1); // FLOAT
+
+    std::vector<uint8_t> model;
+    appendVarint(model, (7u << 3) | 2u); // ModelProto.graph
+    appendVarint(model, graph.size());
+    model.insert(model.end(), graph.begin(), graph.end());
+
+    const auto path =
+        std::filesystem::temp_directory_path() / "imrelighter-metadata-test.onnx";
+    {
+        std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+        stream.write(reinterpret_cast<const char*>(model.data()),
+                     static_cast<std::streamsize>(model.size()));
+    }
+
+    ml::WeightInfo info;
+    std::string error;
+    check(ml::inspectModelWeights(path, info, &error),
+          "model metadata parses minimal ONNX");
+    check(info.fp16 == 2 && info.fp32 == 1 && info.other == 0,
+          "model metadata counts initializer types");
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+void testConfigRoundTrip() {
+    const auto directory =
+        std::filesystem::temp_directory_path() / "imrelighter-config-test";
+    std::error_code ec;
+    std::filesystem::remove_all(directory, ec);
+    std::filesystem::create_directories(directory, ec);
+    const auto path = directory / L"config.json";
+
+    core::UserConfig config;
+    config.language = core::Language::ZhCN;
+    config.languageSet = true;
+    config.backend = core::Backend::Dml;
+    config.theme = core::Theme::Light;
+    config.modelFile = "selected-model.onnx";
+    config.modelSelectionCleared = true;
+    config.maxTasks = 7;
+    config.memoryLimitGb = 9;
+
+    std::string error;
+    check(core::saveUserConfigTo(path, config, &error),
+          "config saves atomically");
+    check(std::filesystem::exists(path), "config file exists");
+    check(!std::filesystem::exists(path.string() + ".tmp"),
+          "config temp file is removed");
+
+    core::UserConfig loaded;
+    check(core::loadUserConfigFrom(path, loaded, &error), "config loads");
+    check(loaded.languageSet && loaded.language == core::Language::ZhCN &&
+              loaded.backend == core::Backend::Dml &&
+              loaded.theme == core::Theme::Light &&
+              loaded.modelFile == config.modelFile &&
+              loaded.modelSelectionCleared && loaded.maxTasks == 7 &&
+              loaded.memoryLimitGb == 9,
+          "config round-trip preserves values");
+
+    {
+        std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+        stream << "{not valid json";
+    }
+    error.clear();
+    check(!core::loadUserConfigFrom(path, loaded, &error) && !error.empty(),
+          "malformed config reports an error");
+
+    error.clear();
+    check(!core::saveUserConfigTo(directory / L"missing" / L"config.json",
+                                  config, &error) &&
+              !error.empty(),
+          "unwritable config reports an error");
+
+    std::filesystem::remove_all(directory, ec);
+}
+
 } // namespace
 
 int main() {
+    testConfigRoundTrip();
     testModelConfig();
     testSha256();
     testWebp();
@@ -241,7 +618,13 @@ int main() {
     testPreprocessShape();
     testPostprocessOrientation();
     testPostprocessFlatAndNaN();
+    testExifOrientation();
+    testExifParsing();
+    testHalfConversion();
+    testImageProbe();
     testDepthPngHeader();
+    testRgbaPngRoundTrip();
+    testModelMetadata();
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return 1;

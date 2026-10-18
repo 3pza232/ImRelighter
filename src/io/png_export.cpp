@@ -4,7 +4,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstdlib>
 #include <fstream>
 #include <system_error>
 
@@ -14,18 +13,18 @@ namespace io {
 namespace {
 
 uint32_t crc32(const uint8_t* data, size_t length) {
-    static std::array<uint32_t, 256> table{};
-    static bool initialized = false;
-    if (!initialized) {
+    static const std::array<uint32_t, 256> table = [] {
+        std::array<uint32_t, 256> values{};
         for (uint32_t i = 0; i < 256; ++i) {
             uint32_t value = i;
             for (int bit = 0; bit < 8; ++bit) {
-                value = (value & 1u) ? (0xedb88320u ^ (value >> 1)) : (value >> 1);
+                value = (value & 1u) ? (0xedb88320u ^ (value >> 1))
+                                     : (value >> 1);
             }
-            table[i] = value;
+            values[i] = value;
         }
-        initialized = true;
-    }
+        return values;
+    }();
     uint32_t result = 0xffffffffu;
     for (size_t i = 0; i < length; ++i) {
         result = table[(result ^ data[i]) & 0xffu] ^ (result >> 8);
@@ -127,8 +126,8 @@ bool writeRgba8Png(const std::filesystem::path& path,
     std::vector<uint8_t> bytes;
     const auto writer = [](void* context, void* data, int size) {
         auto* output = static_cast<std::vector<uint8_t>*>(context);
-        const auto* bytes = static_cast<const uint8_t*>(data);
-        output->insert(output->end(), bytes, bytes + size);
+        const auto* source = static_cast<const uint8_t*>(data);
+        output->insert(output->end(), source, source + size);
     };
     if (!stbi_write_png_to_func(writer, &bytes, width, height, 4, rgba.data(),
                                 width * 4) ||

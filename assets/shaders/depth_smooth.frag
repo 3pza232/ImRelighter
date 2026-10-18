@@ -5,7 +5,6 @@ out float outHeight;
 
 uniform sampler2D uDepth;
 uniform sampler2D uColor;
-uniform vec2 uTexel;
 uniform vec2 uImageSize;
 uniform float uLow;
 uniform float uSpan;

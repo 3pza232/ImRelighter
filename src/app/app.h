@@ -2,21 +2,20 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <future>
 #include <memory>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
+#include "app/document_store.h"
+#include "app/export_service.h"
+#include "app/model_manager.h"
 #include "core/config.h"
 #include "core/document.h"
 #include "core/i18n.h"
 #include "core/types.h"
 #include "gpu/renderer.h"
 #include "ml/inference.h"
-#include "ml/model_metadata.h"
-#include "gpu/texture.h"
 
 struct GLFWwindow;
 
@@ -26,19 +25,11 @@ struct UiState {
     bool sidebarOpen = true;
     bool settingsOpen = false;
     bool exportPopupRequested = false;
-
-    core::Settings settings = core::defaults();
-    std::vector<core::Light> lights{core::makeLight(1)};
-    int selectedLight = 1;
-    core::View view = core::View::Original;
-    bool animate = false;
-
-    float zoom = 1.0f;
-    float panX = 0.0f;
-    float panY = 0.0f;
-    bool fitPending = true;
+    int draggingLight = 0;
 
     std::string statusOverride;
+    double statusExpiresAt = 0.0;
+    bool statusBusy = false;
 };
 
 class App {
@@ -55,17 +46,17 @@ public:
     void setLanguage(core::Language language);
     void setBackend(core::Backend backend);
     void setTheme(core::Theme theme);
-    void setResourceLimits(int maxTasks, int memoryLimitGb);
+    void setResourceLimits(int maxTasks, int memoryLimitGb, bool persist = true);
     void resetTask();
 
     bool hasTask() const;
     bool inferenceBusy() const { return inference_.busy(); }
-    bool exportBusy() const { return exportFuture_.valid(); }
+    bool exportBusy() const { return exports_.busy(); }
     size_t documentCount() const { return documents_.size(); }
     const core::Document* document(size_t index) const;
     const core::Document* activeDocument() const;
     core::Document* activeDocument();
-    int activeIndex() const { return activeIndex_; }
+    int activeIndex() const { return documents_.activeIndex(); }
     gpu::Texture* thumbnail(uint64_t id);
     unsigned int displayTextureId() const;
     bool displayTextureFlipped() const;
@@ -84,8 +75,8 @@ public:
     void inspectModelInfo();
     void refreshModelSha();
     bool modelShaPending() const;
-    const ml::ModelInfo& modelInfo() const { return modelInfo_; }
-    const std::string& modelInfoError() const { return modelInfoError_; }
+    bool modelInfoPending() const { return models_.inspectPending(); }
+    const std::string& modelInfoError() const { return models_.inspectError(); }
     std::string modelType() const;
 
     std::string glVersion() const;
@@ -111,6 +102,9 @@ private:
     void loadConfigAndLanguage();
     void openInitialFilesFromCommandLine();
     void saveConfig();
+    void setStatus(std::string text, double seconds = 4.0, bool busy = false);
+    void clearStatus();
+    void clearStatusIfBusy();
     void drawFrame();
     void pollExport();
     void shutdown();
@@ -118,36 +112,20 @@ private:
     void showError(const std::wstring& message) const;
 
     uint64_t addDocument(const std::filesystem::path& path, std::string* error);
-    void loadUiFromActive();
-    void saveUiToActive();
-    void uploadActiveTexture();
-    void releaseGpuResources();
 
     GLFWwindow* window_ = nullptr;
     bool glfwReady_ = false;
     bool imguiReady_ = false;
     std::string glVersion_;
     std::string glRenderer_;
+    std::vector<unsigned char> fontData_;
 
-    std::vector<std::unique_ptr<core::Document>> documents_;
-    int activeIndex_ = -1;
-    uint64_t nextDocumentId_ = 1;
-    gpu::Texture activeTexture_;
+    DocumentStore documents_;
     std::unique_ptr<gpu::Renderer> renderer_;
     ml::InferenceService inference_;
-    std::unordered_map<uint64_t, std::unique_ptr<gpu::Texture>> thumbnails_;
-    std::future<std::string> exportFuture_;
+    ModelManager models_{config};
+    ExportService exports_;
     double lastFrameTime_ = 0.0;
-    ml::ModelInfo modelInfo_;
-    ml::WeightInfo modelWeights_;
-    std::future<std::pair<std::filesystem::path, std::string>> modelShaFuture_;
-    std::filesystem::path modelShaPath_;
-    std::string modelShaValue_;
-    std::filesystem::path modelInfoPath_;
-    std::string modelInfoError_;
-    bool modelInfoAttempted_ = false;
-    mutable bool dmlChecked_ = false;
-    mutable bool dmlAvailable_ = false;
 };
 
 } // namespace app

@@ -1,6 +1,7 @@
 #include "ml/model_config.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 
 #include "nlohmann/json.hpp"
@@ -40,8 +41,23 @@ bool readPreprocess(const nlohmann::json& value, ModelConfig& config) {
     }
     if (value.contains("do_rescale") && value["do_rescale"].is_boolean())
         config.rescale = value["do_rescale"].get<bool>();
+    if (value.contains("rescale_factor") &&
+        value["rescale_factor"].is_number()) {
+        const float factor = value["rescale_factor"].get<float>();
+        if (std::isfinite(factor) && factor > 0.0f) {
+            config.rescaleFactor = factor;
+        }
+    }
     if (value.contains("do_normalize") && value["do_normalize"].is_boolean())
         config.normalize = value["do_normalize"].get<bool>();
+    if (value.contains("do_resize") && value["do_resize"].is_boolean())
+        config.doResize = value["do_resize"].get<bool>();
+    if (value.contains("resample") && value["resample"].is_number_integer()) {
+        const int code = value["resample"].get<int>();
+        if (code >= 0 && code <= 5) {
+            config.resample = static_cast<Resample>(code);
+        }
+    }
     const auto readArray = [&](const char* key, float* destination) {
         if (!value.contains(key) || !value[key].is_array() ||
             value[key].size() != 3) {
@@ -76,7 +92,13 @@ ModelConfig loadModelConfig(const std::filesystem::path& modelPath) {
         nlohmann::json json;
         if (!readJson(candidate, json)) continue;
 
-        readPreprocess(json, config);
+        // Some processors wrap the settings in a "preprocess" object while
+        // others keep them at the top level.
+        if (json.contains("preprocess") && json["preprocess"].is_object()) {
+            readPreprocess(json["preprocess"], config);
+        } else {
+            readPreprocess(json, config);
+        }
 
         if (json.contains("output") && json["output"].is_object() &&
             json["output"].contains("invert") &&

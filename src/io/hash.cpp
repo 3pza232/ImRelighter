@@ -54,7 +54,6 @@ std::string sha256Model(const std::filesystem::path& modelPath,
 
     BCRYPT_ALG_HANDLE algorithm = nullptr;
     BCRYPT_HASH_HANDLE hash = nullptr;
-    PUCHAR hashObject = nullptr;
     std::array<UCHAR, 32> digest{};
     DWORD objectLength = 0;
     DWORD digestLength = 0;

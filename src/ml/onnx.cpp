@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include "ml/half.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -31,54 +33,6 @@ const char* elementTypeName(ONNXTensorElementDataType type) {
         case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8: return "UINT8";
         default: return "UNKNOWN";
     }
-}
-
-uint16_t floatToHalf(float value) {
-    uint32_t bits = 0;
-    std::memcpy(&bits, &value, sizeof(bits));
-    const uint16_t sign = static_cast<uint16_t>((bits >> 16) & 0x8000u);
-    const int32_t exponent = static_cast<int32_t>((bits >> 23) & 0xffu) - 127 + 15;
-    uint32_t mantissa = bits & 0x7fffffu;
-    if (((bits >> 23) & 0xffu) == 0xffu) {
-        return static_cast<uint16_t>(sign | 0x7c00u | (mantissa ? 0x200u : 0u));
-    }
-    if (exponent >= 31) return static_cast<uint16_t>(sign | 0x7c00u);
-    if (exponent <= 0) {
-        if (exponent < -10) return sign;
-        mantissa |= 0x800000u;
-        const int shift = 14 - exponent;
-        return static_cast<uint16_t>(sign | (mantissa >> (shift + 13)));
-    }
-    return static_cast<uint16_t>(sign | (static_cast<uint32_t>(exponent) << 10) |
-                                 (mantissa >> 13));
-}
-
-float halfToFloat(uint16_t value) {
-    const uint32_t sign = static_cast<uint32_t>(value & 0x8000u) << 16;
-    const uint32_t exponent = (value >> 10) & 0x1fu;
-    uint32_t mantissa = value & 0x3ffu;
-    uint32_t bits = 0;
-    if (exponent == 0) {
-        if (mantissa == 0) {
-            bits = sign;
-        } else {
-            int shift = 0;
-            while ((mantissa & 0x400u) == 0) {
-                mantissa <<= 1;
-                ++shift;
-            }
-            mantissa &= 0x3ffu;
-            bits = sign | (static_cast<uint32_t>(127 - 15 - shift) << 23) |
-                   (mantissa << 13);
-        }
-    } else if (exponent == 31) {
-        bits = sign | 0x7f800000u | (mantissa << 13);
-    } else {
-        bits = sign | ((exponent + 112) << 23) | (mantissa << 13);
-    }
-    float result = 0.0f;
-    std::memcpy(&result, &bits, sizeof(result));
-    return result;
 }
 
 bool readTensorInfo(const OrtApi* api, OrtSession* session, bool input,

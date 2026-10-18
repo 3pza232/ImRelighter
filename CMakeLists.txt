@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(ImRelighter VERSION 0.1.1 LANGUAGES C CXX)
+project(ImRelighter VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,10 +35,14 @@ target_include_directories(imgui PUBLIC
 target_link_libraries(imgui PUBLIC glfw)
 
 add_library(stb INTERFACE)
-target_include_directories(stb INTERFACE "${EXTERN_DIR}/stb")
+target_include_directories(stb SYSTEM INTERFACE "${EXTERN_DIR}/stb")
 
 add_library(json INTERFACE)
-target_include_directories(json INTERFACE "${EXTERN_DIR}/json")
+target_include_directories(json SYSTEM INTERFACE "${EXTERN_DIR}/json")
+
+add_library(imrelighter_warnings INTERFACE)
+target_compile_options(imrelighter_warnings INTERFACE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra>)
 
 # ---------------------------------------------------------------------------
 # Core library (no GLFW / ImGui / GL)
@@ -50,14 +54,18 @@ add_library(imrelighter_core STATIC
     src/io/paths.cpp
     src/io/native_dialog.cpp
     src/io/image_io.cpp
+    src/io/image_probe.cpp
+    src/io/exif.cpp
     src/io/webp_decoder.cpp
     src/io/hash.cpp
     src/io/png_export.cpp
     src/io/stb_impl.cpp
     src/io/stb_write_impl.cpp)
 target_include_directories(imrelighter_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
-target_link_libraries(imrelighter_core PUBLIC json stb)
+target_link_libraries(imrelighter_core PUBLIC json stb PRIVATE imrelighter_warnings)
 target_compile_features(imrelighter_core PUBLIC cxx_std_20)
+target_compile_definitions(imrelighter_core PRIVATE
+    UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 # ---------------------------------------------------------------------------
 # Application
@@ -66,6 +74,9 @@ target_compile_features(imrelighter_core PUBLIC cxx_std_20)
 add_executable(ImRelighter WIN32
     src/main.cpp
     src/app/app.cpp
+    src/app/document_store.cpp
+    src/app/export_service.cpp
+    src/app/model_manager.cpp
     src/gpu/texture.cpp
     src/gpu/shader.cpp
     src/gpu/renderer.cpp
@@ -77,13 +88,22 @@ add_executable(ImRelighter WIN32
     src/ml/inference.cpp
     src/ui/theme.cpp
     src/ui/widgets.cpp
-    src/ui/ui.cpp)
+    src/ui/ui.cpp
+    src/ui/ui_canvas.cpp
+    src/ui/ui_export.cpp
+    src/ui/ui_helpers.cpp
+    src/ui/ui_inspector.cpp
+    src/ui/ui_settings.cpp
+    src/ui/ui_sidebar.cpp
+    src/ui/ui_status.cpp
+    src/ui/ui_topbar.cpp)
 
 target_include_directories(ImRelighter PRIVATE
     "${CMAKE_SOURCE_DIR}/src"
     "${EXTERN_DIR}/onnxruntime/include")
 target_link_libraries(ImRelighter PRIVATE
     imrelighter_core
+    imrelighter_warnings
     glad
     imgui
     glfw
@@ -92,8 +112,6 @@ target_link_libraries(ImRelighter PRIVATE
     user32
     shell32
     comdlg32
-    ole32
-    uuid
     bcrypt)
 
 target_compile_definitions(ImRelighter PRIVATE
@@ -102,7 +120,6 @@ target_compile_definitions(ImRelighter PRIVATE
     IMRELIGHTER_VERSION="${PROJECT_VERSION}")
 
 target_compile_options(ImRelighter PRIVATE
-    -Wall -Wextra
     $<$<CONFIG:Debug>:-O0 -g3>
     $<$<CONFIG:RelWithDebInfo>:-O2 -g>)
 
@@ -131,12 +148,14 @@ if(BUILD_TESTING)
         tests/core_tests.cpp
         src/ml/preprocess.cpp
         src/ml/model_config.cpp
+        src/ml/model_metadata.cpp
         src/ml/stb_resize_impl.cpp)
     target_include_directories(imrelighter_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
         "${EXTERN_DIR}/stb"
         "${EXTERN_DIR}/json")
-    target_link_libraries(imrelighter_tests PRIVATE imrelighter_core bcrypt)
+    target_link_libraries(imrelighter_tests PRIVATE
+        imrelighter_core imrelighter_warnings bcrypt)
     set_target_properties(imrelighter_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
     target_compile_definitions(imrelighter_tests PRIVATE
@@ -160,13 +179,21 @@ if(BUILD_TESTING)
     target_include_directories(imrelighter_gpu_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src")
     target_link_libraries(imrelighter_gpu_tests PRIVATE
-        imrelighter_core glad glfw opengl32 gdi32 user32)
+        imrelighter_core imrelighter_warnings glad glfw opengl32 gdi32 user32)
     target_compile_definitions(imrelighter_gpu_tests PRIVATE
         "IMRELIGHTER_SHADER_DIR=\"${CMAKE_SOURCE_DIR}/assets/shaders\""
         "IMRELIGHTER_GOLDEN_DIR=\"${CMAKE_SOURCE_DIR}/tests/golden\"")
     set_target_properties(imrelighter_gpu_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
     add_test(NAME imrelighter_gpu COMMAND imrelighter_gpu_tests)
+    set_tests_properties(imrelighter_gpu PROPERTIES SKIP_RETURN_CODE 77)
+
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME imrelighter_i18n_keys
+            COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/tests/check_i18n_keys.py")
+    endif()
 
     add_executable(imrelighter_inference_bench
         tests/inference_bench.cpp
@@ -179,6 +206,8 @@ if(BUILD_TESTING)
         "${EXTERN_DIR}/stb"
         "${EXTERN_DIR}/json"
         "${EXTERN_DIR}/onnxruntime/include")
+    target_link_libraries(imrelighter_inference_bench PRIVATE
+        imrelighter_warnings)
     target_compile_definitions(imrelighter_inference_bench PRIVATE
         "IMRELIGHTER_MODEL_PATH=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/model.onnx\""
         "IMRELIGHTER_ORT_DLL=\"${CMAKE_SOURCE_DIR}/extern/onnxruntime/lib/onnxruntime.dll\"")
@@ -227,6 +256,9 @@ add_custom_command(TARGET ImRelighter POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
             "$<TARGET_FILE_DIR:ImRelighter>/THIRD_PARTY_NOTICES.md"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/LICENSE"
+            "$<TARGET_FILE_DIR:ImRelighter>/LICENSE"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${EXTERN_DIR}/onnxruntime/LICENSE"
             "$<TARGET_FILE_DIR:ImRelighter>/LICENSE-ONNXRUNTIME.txt"
