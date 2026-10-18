@@ -20,7 +20,7 @@ ImRelighter 使用以下第三方组件。各组件保留其原始许可证；�
 | 组件 | 许可证 | 位置 |
 |---|---|---|
 | Depth Anything V2 Small（ONNX） | Apache-2.0 | `models/depth-anything-v2-small/LICENSE` |
-| 来源 | `onnx-community/depth-anything-v2-small`，revision `4472b7362082ad9968fee890ca0f1e5aca36b93d` | `models/depth-anything-v2-small/manifest.json` |
+| 来源 | `onnx-community/depth-anything-v2-small`，revision `4472b7362082ad9968fee890ca0f1e5aca36b93d` | 模型目录 |
 
 模型权重随项目/构建产物分发；不联网下载。模型许可证不改变本项目自身代码的许可证。
 
@@ -34,7 +34,7 @@ ImRelighter 使用以下第三方组件。各组件保留其原始许可证；�
 
 - 产品交互参考 AiDeNier 的 Relight Desk 视频；本项目为独立实现，不包含原作者的代码或素材。
 - 原参考项目的示例插画未进入本仓库。
-- 本项目自身源代码的许可证尚未选定；在选定前，不自动授予第三方再分发权利。
+- 本项目自身源代码采用 MIT License，Copyright 2026 PZA，见根目录 `LICENSE`。
 
 ## 维护规则
 

@@ -1,23 +1,44 @@
-# ImRelighter 0.1.1
+# ImRelighter 0.2.0
 
-> 让图片经过本地 ONNX 深度推理后，操控可移动编辑的光源实现对图片的重打光。
+> 让一张图拥有可编辑的光。
 
-Windows 本地的单图重打光工具：本地深度估计、OpenGL 实时光照、多视图预览与 PNG 导出。
+ImRelighter 是 Windows 本地的单图重打光工具：在本地用 ONNX 模型估计深度，在 OpenGL 中实时拖动最多 8 盏灯，并导出光照、法线、深度、仅光照和阴影图层。
 
-- 左侧任务栏、中间画布、右侧属性区、顶栏、状态栏。
-- 思源黑体 CN 中英文 UI、黑夜/白天主题、应用图标。
-- 设置面板已可用：语言（中/英）、主题、推理后端（Auto / CPU / DirectML）、模型文件选择、关于/许可证。
-- **PNG / JPEG / WebP 图片加载、缩略图任务栏、多任务切换/关闭、滚轮缩放、中键平移、光源拖动**。
-- **OpenGL 4.5 渲染管线**：深度平滑、法线、8 灯阴影 MRT、模糊、最终光照、7 视图、对比线。
-- **本地 ONNX 深度推理**：ONNX Runtime C API、动态加载、CPU / DirectML、FP32/FP16、单输入/单输出深度模型、预处理/后处理、后台线程。
-- 模型、`assets/`（含 `assets/shaders/`）、ONNX Runtime、DirectML、libwebp 会在构建时复制到产物目录。
-- 模型支持同目录/上一级 `preprocessor_config.json` 读取输入尺寸与归一化参数。
-- **PNG 导出**：光照、法线、仅光照、阴影 RGBA8；深度 16 位灰度 PNG；全分辨率渲染回读。
-- **GPU 金图像回归、DirectML、异步导出**。
+![ImRelighter 主界面](docs/images/main-window.png)
+
+## 功能
+
+- **本地推理**：ONNX Runtime C API，支持 CPU 与 DirectML；模型与 DLL 动态加载，缺失时可回退或给出明确提示。
+- **实时渲染**：深度平滑、法线、阴影 MRT、模糊、最终光照；7 种视图与拆分对比线。
+- **多任务**：PNG / JPEG / WebP，多选打开、缩略图切换、独立参数与灯光。
+- **可编辑灯光**：最多 8 盏，位置、颜色、强度、范围与开关；画布拖动灯光。
+- **导出**：RGBA8 光照 / 法线 / 仅光照 / 阴影，16 位灰度深度；全分辨率回读，PNG 编码异步执行。
+- **桌面体验**：中文 / English、暗色 / 亮色主题、高 DPI 缩放、设置模态、非 ASCII 路径支持。
+- **离线优先**：不联网、不上传图片、不自动下载模型。
+
+## 安装
+
+发布页提供 `ImRelighter-0.2.0-setup.exe`。安装器支持简体中文与 English，按用户安装到 `%LOCALAPPDATA%\Programs\ImRelighter`，创建开始菜单项，并可选创建桌面快捷方式。卸载默认保留 `config.json`，便于重新安装后继续使用原有设置。
+
+也可以直接解压运行目录使用，不写注册表。运行要求与安装器行为见 [docs/packaging.md](docs/packaging.md)。
 
 ## 构建
 
-需要 MinGW-w64 GCC 13.x、CMake 3.24+。
+要求：
+
+- Windows x64
+- MinGW-w64 GCC 13 或更新版本
+- CMake 3.26+
+- Ninja
+- `gcc`、`g++`、`ninja` 位于 `PATH`
+
+```powershell
+cmake --preset mingw-release
+cmake --build --preset mingw-release
+ctest --test-dir build/mingw-release --output-on-failure
+```
+
+Debug 构建：
 
 ```powershell
 cmake --preset mingw-debug
@@ -27,57 +48,85 @@ cmake --build --preset mingw-debug
 产物：
 
 ```text
-build/mingw-debug/bin/ImRelighter.exe
+build/mingw-release/bin/ImRelighter.exe
+build/mingw-release/tests/           测试与基准程序
 ```
 
-直接运行即可。Release/RelWithDebInfo：
+不想使用 preset 时，可直接指定生成器：
 
 ```powershell
-cmake --preset mingw-release
-cmake --build --preset mingw-release
-ctest --test-dir build/mingw-release --output-on-failure
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build
 ```
 
-也可以使用 Ninja 进行相关构建
+`CMakePresets.json` 只依赖 `PATH` 中的工具链，不包含本机绝对路径。CI 配置见 `.github/workflows/windows.yml`。
 
-性能基准（本机，512×512 合成图，模型 99 MB）：
+生成安装器需要 Inno Setup 6.5+：
 
-```text
-CPU  529.8 ms
-DML   96.5 ms（首次 warmup 1313.6 ms）
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1 -FetchVCRedist
 ```
 
-GPU 金图像位于 `tests/golden/`；重新生成需在 build 目录放置 `update-golden.flag` 后运行 `imrelighter_gpu_tests`。DirectML 基准：`build/mingw-release/bin/imrelighter_inference_bench.exe`。
+输出为 `dist/ImRelighter-0.2.0-setup.exe` 与对应 `.sha256`。
 
-## 当前可用操作
+## 运行
 
-- `Ctrl+O` 或「打开图片」：打开原生文件对话框，支持多选；每张图成为一个任务。
-- 也可以把图片路径作为命令行参数：`ImRelighter.exe a.png b.jpg`。
-- 点击任务缩略图切换；右上角 `×` 关闭任务。
-- 滚轮缩放画布（以鼠标为中心）；中键拖动平移；左键拖动光源。
-- 右侧属性区可调灯光位置/颜色/强度/范围、明暗、表面参数。
-- `Ctrl+,` 或「设置」：打开设置面板；切换语言、查看模型状态。
-- `Ctrl+G`：生成深度与法线。
-- `Ctrl+E` 或「导出」：导出当前任务的光照、法线、深度、仅光照、阴影 PNG。
-- `Esc`：关闭设置面板。
+直接运行 `ImRelighter.exe`，或把图片路径作为参数：
+
+```powershell
+ImRelighter.exe a.png b.jpg c.webp
+```
+
+程序从 exe 同级读取 `assets/`、`models/` 与运行时 DLL；配置写入 exe 同级的 `config.json`。若目录不可写，保存设置时会显示错误。
+
+## 常用操作
+
+| 操作 | 快捷键 / 方式 |
+|---|---|
+| 打开图片（可多选） | `Ctrl+O` |
+| 生成深度与法线 | `Ctrl+G` |
+| 导出 | `Ctrl+E` |
+| 打开设置 | `Ctrl+,` |
+| 适应画布 | `F` |
+| 关闭设置 | `Esc` |
+| 缩放 / 平移 | 滚轮 / 中键拖动 |
+| 移动灯光 | 从灯光标记开始左键拖动 |
+
+完整说明见 [docs/usage.md](docs/usage.md)。
 
 ## 目录
 
 ```text
-assets/      字体、图标、i18n
-docs/        项目文档（build/usage/models/testing/packaging）
-extern/      GLAD / GLFW / ImGui / stb / nlohmann/json / ONNX Runtime
-models/      本地 ONNX 模型（随构建复制）
-src/         应用、核心、I/O、UI
-tests/       core / GPU 单元测试（CTest）
+assets/      字体、图标、i18n、shader
+docs/        架构、构建、使用、模型、测试、打包文档与截图
+extern/      固定版本的第三方源码与二进制
+models/      默认 ONNX 深度模型
+src/         app / core / io / ml / gpu / ui
+tests/       core、GPU 金图像、i18n 检查与推理基准
 ```
 
-## 说明
+## 文档
 
-- 主题支持黑夜 / 白天，可在设置中切换并写入 `config.json`。
-- AI 深度：右栏「生成深度与法线」或 `Ctrl+G`。
-- 配置写入 exe 同级的 `config.json`；模型在 exe 同级的 `models/`，不写 AppData。
-- 不联网、不上传图片、不下载模型。
-- 模型：`models/depth-anything-v2-small/model.onnx`（Apache-2.0）。
-- 第三方许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-- 项目文档见 [docs/README.md](docs/README.md)。
+- [架构与数据流](docs/architecture.md)
+- [构建](docs/build.md)
+- [使用](docs/usage.md)
+- [模型兼容性](docs/models.md)
+- [测试](docs/testing.md)
+- [已知限制](docs/limitations.md)
+- [发布打包](docs/packaging.md)
+- [变更记录](CHANGELOG.md)
+
+## 性能参考
+
+本机（512×512 合成输入，Depth Anything V2 Small，99 MB 模型）：
+
+```text
+CPU  479.6 ms（warmup 458.5 ms）
+DML   70.5 ms（warmup 339.3 ms）
+```
+
+数值只表示相对量级，随 CPU、GPU、驱动和模型变化。基准程序：`build/mingw-release/tests/imrelighter_inference_bench.exe`。
+
+## 许可
+
+项目源代码采用 MIT License，见 [LICENSE](LICENSE)。模型、字体与第三方组件保留各自许可证，汇总见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
