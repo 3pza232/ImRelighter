@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <string>
@@ -117,27 +119,44 @@ void drawSettings(app::App& app) {
 
                 ImGui::Spacing();
                 sectionTitle(app.tr("settings.resources").c_str());
+                // ImGui sizes integer slider grabs from the value range, so a
+                // 1..500 slider gets a much thinner knob than a 1..16 slider.
+                // Use float sliders with integer formatting and one explicit
+                // grab size to keep both controls visually identical.
+                ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, scaled(18.0f));
                 formLabel(app.tr("settings.max_tasks").c_str(),
                           scaled(kSettingsLabelWidth));
-                int maxTasks = app.config.maxTasks;
+                float maxTasks = static_cast<float>(app.config.maxTasks);
                 ImGui::SetNextItemWidth(-1.0f);
-                if (ImGui::SliderInt("##max_tasks", &maxTasks, 1, 500)) {
-                    app.setResourceLimits(maxTasks, app.config.memoryLimitGb,
+                if (ImGui::SliderFloat("##max_tasks", &maxTasks, 1.0f, 500.0f,
+                                       "%.0f", ImGuiSliderFlags_AlwaysClamp)) {
+                    const int value = std::clamp(
+                        static_cast<int>(std::lround(maxTasks)), 1, 500);
+                    maxTasks = static_cast<float>(value);
+                    app.setResourceLimits(value, app.config.memoryLimitGb,
                                           false);
                 }
                 if (ImGui::IsItemDeactivatedAfterEdit()) {
-                    app.setResourceLimits(maxTasks, app.config.memoryLimitGb);
+                    app.setResourceLimits(app.config.maxTasks,
+                                          app.config.memoryLimitGb);
                 }
                 formLabel(app.tr("settings.memory_limit").c_str(),
                           scaled(kSettingsLabelWidth));
-                int memoryGb = app.config.memoryLimitGb;
+                float memoryGb =
+                    static_cast<float>(app.config.memoryLimitGb);
                 ImGui::SetNextItemWidth(-1.0f);
-                if (ImGui::SliderInt("##memory_limit", &memoryGb, 1, 16)) {
-                    app.setResourceLimits(app.config.maxTasks, memoryGb, false);
+                if (ImGui::SliderFloat("##memory_limit", &memoryGb, 1.0f, 16.0f,
+                                       "%.0f", ImGuiSliderFlags_AlwaysClamp)) {
+                    const int value = std::clamp(
+                        static_cast<int>(std::lround(memoryGb)), 1, 16);
+                    memoryGb = static_cast<float>(value);
+                    app.setResourceLimits(app.config.maxTasks, value, false);
                 }
                 if (ImGui::IsItemDeactivatedAfterEdit()) {
-                    app.setResourceLimits(app.config.maxTasks, memoryGb);
+                    app.setResourceLimits(app.config.maxTasks,
+                                          app.config.memoryLimitGb);
                 }
+                ImGui::PopStyleVar();
 
                 ImGui::EndTabItem();
             }

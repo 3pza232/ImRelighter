@@ -90,11 +90,11 @@ void drawTaskCard(app::App& app, size_t index, uint64_t& activateId,
     ImGui::EndGroup();
     ImGui::PopClipRect();
 
-    const float closeSize = scaled(28.0f);
     ImGui::SetCursorScreenPos(
-        ImVec2(rowStart.x + barWidth + scaled(kTaskCloseGap),
-               rowStart.y + (scaled(kTaskRowHeight) - closeSize) * 0.5f));
-    if (closeButton("##remove", ImVec2(closeSize, closeSize))) {
+        ImVec2(rowStart.x + barWidth + scaled(kTaskCloseGap), rowStart.y));
+    if (closeButton(
+            "##remove",
+            ImVec2(scaled(kTaskCloseWidth), scaled(kTaskRowHeight)))) {
         closeId = doc->id;
     }
 
