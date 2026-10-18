@@ -105,6 +105,7 @@
   "settings.model_path": "路径",
   "settings.model_size": "大小",
   "settings.model_sha": "SHA-256",
+  "settings.model_sha_calculating": "计算中…",
   "settings.model_type": "模型类型",
   "settings.open_model_dir": "打开模型目录",
   "settings.about": "关于",

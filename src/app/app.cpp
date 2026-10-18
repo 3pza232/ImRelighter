@@ -27,6 +27,7 @@
 #include "io/image_io.h"
 #include "io/native_dialog.h"
 #include "io/paths.h"
+#include "io/hash.h"
 #include "io/png_export.h"
 #include "ml/model_metadata.h"
 #include "nlohmann/json.hpp"
@@ -80,14 +81,6 @@ std::filesystem::path resolveModelFile(const std::filesystem::path& directory) {
         if (std::filesystem::is_regular_file(candidate, ec)) return candidate;
     }
     return {};
-}
-
-std::string readFile(const std::filesystem::path& path) {
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream) return {};
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    return buffer.str();
 }
 
 } // namespace
@@ -296,6 +289,16 @@ void App::pollExport() {
 
 void App::drawFrame() {
     pollExport();
+    if (modelShaFuture_.valid() &&
+        modelShaFuture_.wait_for(std::chrono::seconds(0)) ==
+            std::future_status::ready) {
+        auto result = modelShaFuture_.get();
+        if (result.first == modelPath()) {
+            modelShaValue_ = std::move(result.second);
+        } else {
+            modelShaPath_.clear();
+        }
+    }
     const double now = glfwGetTime();
     if (lastFrameTime_ == 0.0) lastFrameTime_ = now;
     const double delta = std::min(0.05, std::max(0.0, now - lastFrameTime_));
@@ -798,23 +801,30 @@ std::uintmax_t App::modelSize() const {
 }
 
 std::string App::modelSha() const {
-    if (modelPath().empty()) return {};
-    auto manifest = modelPath().parent_path() / L"manifest.json";
-    if (!paths::fileExists(manifest)) {
-        if (!config.modelFile.empty() || !config.modelDir.empty()) return {};
-        manifest = paths::modelManifest();
-    }
-    const std::string text = readFile(manifest);
-    if (text.empty()) return {};
-    try {
-        const auto json = nlohmann::json::parse(text);
-        if (json.contains("file") && json["file"].contains("sha256") &&
-            json["file"]["sha256"].is_string()) {
-            return json["file"]["sha256"].get<std::string>();
+    return modelShaValue_;
+}
+
+void App::refreshModelSha() {
+    const auto path = modelPath();
+    if (path.empty()) {
+        if (!modelShaFuture_.valid()) {
+            modelShaPath_.clear();
+            modelShaValue_.clear();
         }
-    } catch (const std::exception&) {
+        return;
     }
-    return {};
+    if (path == modelShaPath_ || modelShaFuture_.valid()) return;
+    modelShaPath_ = path;
+    modelShaValue_.clear();
+    modelShaFuture_ = std::async(
+        std::launch::async, [path] {
+            std::string error;
+            return std::make_pair(path, io::sha256Model(path, &error));
+        });
+}
+
+bool App::modelShaPending() const {
+    return modelShaFuture_.valid() && modelShaPath_ == modelPath();
 }
 
 std::filesystem::path App::modelPath() const {
@@ -851,6 +861,8 @@ void App::chooseModelFile() {
     config.modelSelectionCleared = false;
     modelInfoPath_.clear();
     modelInfoAttempted_ = false;
+    modelShaPath_.clear();
+    modelShaValue_.clear();
     ui.statusOverride.clear();
     saveConfig();
 }
@@ -904,6 +916,8 @@ void App::clearModelSelection() {
     modelInfoPath_.clear();
     modelInfoError_.clear();
     modelInfoAttempted_ = false;
+    modelShaPath_.clear();
+    modelShaValue_.clear();
     ui.statusOverride.clear();
     saveConfig();
 }

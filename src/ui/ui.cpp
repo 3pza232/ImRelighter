@@ -1013,8 +1013,13 @@ void drawSettings(app::App& app) {
                     ImGui::Spacing();
                     ImGui::TextDisabled("%s",
                                         app.tr("settings.model_sha").c_str());
-                    const std::string modelSha = app.modelSha();
-                    ImGui::TextWrapped("%s", modelSha.empty() ? "—" : modelSha.c_str());
+                    app.refreshModelSha();
+                    if (app.modelShaPending()) {
+                        ImGui::TextDisabled("%s", app.tr("settings.model_sha_calculating").c_str());
+                    } else {
+                        const std::string sha = app.modelSha();
+                        ImGui::TextWrapped("%s", sha.empty() ? "—" : sha.c_str());
+                    }
                     ImGui::Spacing();
 
                     if (ImGui::Button(

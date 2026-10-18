@@ -57,10 +57,6 @@ std::filesystem::path modelFile() {
     return modelDir() / L"model.onnx";
 }
 
-std::filesystem::path modelManifest() {
-    return modelDir() / L"manifest.json";
-}
-
 std::filesystem::path configFile() {
     return exeDir() / L"config.json";
 }

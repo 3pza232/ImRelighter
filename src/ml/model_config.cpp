@@ -70,18 +70,13 @@ ModelConfig loadModelConfig(const std::filesystem::path& modelPath) {
     const auto directory = modelPath.parent_path();
     const std::filesystem::path candidates[] = {
         directory / L"preprocessor_config.json",
-        directory / L"manifest.json",
         directory.parent_path() / L"preprocessor_config.json",
-        directory.parent_path() / L"manifest.json",
     };
     for (const auto& candidate : candidates) {
         nlohmann::json json;
         if (!readJson(candidate, json)) continue;
 
-        if (json.contains("preprocess"))
-            readPreprocess(json["preprocess"], config);
-        else
-            readPreprocess(json, config);
+        readPreprocess(json, config);
 
         if (json.contains("output") && json["output"].is_object() &&
             json["output"].contains("invert") &&

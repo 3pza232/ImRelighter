@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "core/i18n.h"
+#include "io/hash.h"
 #include "io/image_io.h"
 #include "io/png_export.h"
 #include "ml/model_config.h"
@@ -36,13 +37,6 @@ bool near(float a, float b, float epsilon = 1e-4f) {
 }
 
 void testModelConfig() {
-    const ml::ModelConfig config = ml::loadModelConfig(IMRELIGHTER_MODEL_MANIFEST);
-    check(config.loaded, "model manifest config loads");
-    check(config.inputSize == 518 && config.sizeMultiple == 14,
-          "V2 manifest preprocessing values");
-    check(std::abs(config.mean[0] - 0.485f) < 1e-5f &&
-              std::abs(config.stddev[0] - 0.229f) < 1e-5f,
-          "V2 manifest normalization values");
     const ml::ModelConfig processor =
         ml::loadModelConfig(IMRELIGHTER_PREPROCESSOR_CONFIG);
     check(processor.loaded && processor.inputSize == 518 &&
@@ -144,6 +138,13 @@ std::vector<uint8_t> collectIdat(const std::vector<uint8_t>& png) {
     return result;
 }
 
+void testSha256() {
+    const std::string digest = io::sha256Model(IMRELIGHTER_TEST_WEBP);
+    check(digest ==
+              "4559c622d464194eed630fc3aa6ece8202dde886e030a223edc7412ac806991c",
+          "SHA-256 matches the test asset");
+}
+
 void testWebp() {
     std::string error;
     const auto image = io::loadImage(IMRELIGHTER_TEST_WEBP, &error);
@@ -234,6 +235,7 @@ void testDepthPngHeader() {
 
 int main() {
     testModelConfig();
+    testSha256();
     testWebp();
     testI18nParity();
     testPreprocessShape();

@@ -81,6 +81,8 @@ public:
     void chooseModelFile();
     void clearModelSelection();
     void inspectModelInfo();
+    void refreshModelSha();
+    bool modelShaPending() const;
     const ml::ModelInfo& modelInfo() const { return modelInfo_; }
     const std::string& modelInfoError() const { return modelInfoError_; }
     std::string modelType() const;
@@ -137,6 +139,9 @@ private:
     double lastFrameTime_ = 0.0;
     ml::ModelInfo modelInfo_;
     ml::WeightInfo modelWeights_;
+    std::future<std::pair<std::filesystem::path, std::string>> modelShaFuture_;
+    std::filesystem::path modelShaPath_;
+    std::string modelShaValue_;
     std::filesystem::path modelInfoPath_;
     std::string modelInfoError_;
     bool modelInfoAttempted_ = false;

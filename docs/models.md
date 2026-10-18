@@ -16,7 +16,7 @@
 
 ## 预处理配置
 
-优先从模型同目录或其上一级的 `preprocessor_config.json` / `manifest.json` 读取：
+优先从模型同目录或其上一级的 `preprocessor_config.json` 读取：
 
 - `size` 或 `preprocess.size`：输入尺寸，默认 518
 - `ensure_multiple_of`：尺寸倍数，默认 14

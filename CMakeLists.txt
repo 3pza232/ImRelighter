@@ -51,6 +51,7 @@ add_library(imrelighter_core STATIC
     src/io/native_dialog.cpp
     src/io/image_io.cpp
     src/io/webp_decoder.cpp
+    src/io/hash.cpp
     src/io/png_export.cpp
     src/io/stb_impl.cpp
     src/io/stb_write_impl.cpp)
@@ -92,7 +93,8 @@ target_link_libraries(ImRelighter PRIVATE
     shell32
     comdlg32
     ole32
-    uuid)
+    uuid
+    bcrypt)
 
 target_compile_definitions(ImRelighter PRIVATE
     UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
@@ -134,13 +136,12 @@ if(BUILD_TESTING)
         "${CMAKE_SOURCE_DIR}/src"
         "${EXTERN_DIR}/stb"
         "${EXTERN_DIR}/json")
-    target_link_libraries(imrelighter_tests PRIVATE imrelighter_core)
+    target_link_libraries(imrelighter_tests PRIVATE imrelighter_core bcrypt)
     set_target_properties(imrelighter_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
     target_compile_definitions(imrelighter_tests PRIVATE
         "IMRELIGHTER_I18N_DIR=\"${CMAKE_SOURCE_DIR}/assets/i18n\""
         "IMRELIGHTER_TEST_WEBP=\"${CMAKE_SOURCE_DIR}/tests/data/test.webp\""
-        "IMRELIGHTER_MODEL_MANIFEST=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/manifest.json\""
         "IMRELIGHTER_PREPROCESSOR_CONFIG=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/preprocessor_config.json\"")
     add_custom_command(TARGET imrelighter_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -205,9 +206,6 @@ add_custom_command(TARGET ImRelighter POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/model.onnx"
             "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/model.onnx"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/manifest.json"
-            "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/manifest.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/LICENSE"
             "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/LICENSE"

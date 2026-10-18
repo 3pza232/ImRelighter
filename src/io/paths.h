@@ -13,7 +13,6 @@ std::filesystem::path assetPath(std::string_view relative);
 
 std::filesystem::path modelDir();
 std::filesystem::path modelFile();
-std::filesystem::path modelManifest();
 
 std::filesystem::path configFile();
 
