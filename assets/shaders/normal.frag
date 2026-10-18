@@ -14,8 +14,10 @@ uniform float uMaxTilt;
 uniform float uDetailStrength;
 uniform vec3 uFlips;
 
-float heightAt(vec2 uv) {
-    return texture(uHeight, uv).r * uAmplitude;
+float heightAt(ivec2 pixel) {
+    ivec2 size = textureSize(uHeight, 0);
+    return texelFetch(uHeight, clamp(pixel, ivec2(0), size - 1), 0).r *
+           uAmplitude;
 }
 
 float colorLuma(vec2 uv) {
@@ -30,11 +32,12 @@ void main() {
     // footprint in output pixels. uPixelScale converts the preview gradient
     // back to source-image pixels for a resolution-independent slope.
     vec2 texel = uTexel;
-    float c = heightAt(vUv);
-    float l = heightAt(vUv - vec2(texel.x, 0.0));
-    float r = heightAt(vUv + vec2(texel.x, 0.0));
-    float b = heightAt(vUv - vec2(0.0, texel.y));
-    float u = heightAt(vUv + vec2(0.0, texel.y));
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    float c = heightAt(pixel);
+    float l = heightAt(pixel - ivec2(1, 0));
+    float r = heightAt(pixel + ivec2(1, 0));
+    float b = heightAt(pixel - ivec2(0, 1));
+    float u = heightAt(pixel + ivec2(0, 1));
 
     float limit = 0.055 * max(uAmplitude, 0.001);
     float dx = (abs(r - c) < limit && abs(c - l) < limit)

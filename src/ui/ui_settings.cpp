@@ -170,11 +170,11 @@ void drawSettings(app::App& app) {
                     static_cast<float>(app.config.maxImageMegapixels);
                 ImGui::SetNextItemWidth(-1.0f);
                 if (ImGui::SliderFloat(
-                        "##image_limit", &imageMegapixels, 4.0f, 100.0f,
+                        "##image_limit", &imageMegapixels, 4.0f, 200.0f,
                         "%.0f MP", ImGuiSliderFlags_AlwaysClamp)) {
                     const int value = std::clamp(
                         static_cast<int>(std::lround(imageMegapixels)), 4,
-                        100);
+                        200);
                     imageMegapixels = static_cast<float>(value);
                     app.setImageMegapixelLimit(value, false);
                 }

@@ -426,16 +426,16 @@ void testImageProbe() {
 
     std::uint8_t oversized[24] = {};
     std::copy(png, png + sizeof(png), oversized);
-    oversized[18] = 0x17;
-    oversized[19] = 0x70;
+    oversized[18] = 0x1B;
+    oversized[19] = 0x58;
     oversized[22] = 0x13;
     oversized[23] = 0x88;
     check(io::probeImageDimensions(oversized, sizeof(oversized), width, height),
           "oversized PNG header probe succeeds");
     check(io::exceedsPixelLimit(width, height),
           "oversized header is rejected by the pixel limit");
-    check(io::kDefaultImageMegapixels == 10,
-          "default image limit is 10 megapixels");
+    check(io::kDefaultImageMegapixels == 30,
+          "default image limit is 30 megapixels");
     check(!io::exceedsPixelLimit(3000, 3000),
           "default limit accepts a 9 megapixel image");
     check(io::exceedsPixelLimit(3000, 3000,

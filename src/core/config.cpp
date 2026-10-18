@@ -86,7 +86,7 @@ bool loadUserConfigFrom(const std::filesystem::path& path, UserConfig& config,
         config.maxTasks = std::clamp(config.maxTasks, 1, 500);
         config.memoryLimitGb = std::clamp(config.memoryLimitGb, 1, 16);
         config.maxImageMegapixels =
-            std::clamp(config.maxImageMegapixels, 4, 100);
+            std::clamp(config.maxImageMegapixels, 4, 200);
         return true;
     } catch (const std::exception& e) {
         if (error) *error = std::string("Failed to read config: ") + e.what();
@@ -112,7 +112,7 @@ bool saveUserConfigTo(const std::filesystem::path& path,
         json["maxTasks"] = std::clamp(config.maxTasks, 1, 500);
         json["memoryLimitGb"] = std::clamp(config.memoryLimitGb, 1, 16);
         json["maxImageMegapixels"] =
-            std::clamp(config.maxImageMegapixels, 4, 100);
+            std::clamp(config.maxImageMegapixels, 4, 200);
 
         auto temporary = path;
         temporary += L".tmp";

@@ -235,6 +235,49 @@ void testNormalSlopeClamp(gpu::Renderer& renderer) {
           "normal slope is clamped at depth discontinuities");
 }
 
+void testNormalEdgeWidth(gpu::Renderer& renderer) {
+    core::Document doc;
+    doc.id = 101;
+    doc.width = 256;
+    doc.height = 128;
+    doc.hasDepth = true;
+    doc.color.assign(static_cast<size_t>(doc.width) * doc.height * 4, 180);
+    for (int y = 0; y < doc.height; ++y) {
+        for (int x = 0; x < doc.width; ++x) {
+            doc.color[(static_cast<size_t>(y) * doc.width + x) * 4 + 3] = 255;
+        }
+    }
+    doc.depth.assign(static_cast<size_t>(doc.width) * doc.height, 0.2f);
+    for (int y = 0; y < doc.height; ++y) {
+        for (int x = doc.width / 2; x < doc.width; ++x) {
+            doc.depth[static_cast<size_t>(y) * doc.width + x] = 0.8f;
+        }
+    }
+    doc.settings.previewLongEdge = 128;
+    doc.settings.smooth = 0.0f;
+    doc.settings.height = 1.0f;
+    doc.settings.normalStrength = 1.0f;
+    doc.settings.detail = 0.0f;
+    doc.settings.rim = 0.0f;
+    doc.settings.specular = 0.0f;
+    doc.lights.clear();
+
+    std::string error;
+    std::vector<uint8_t> pixels;
+    check(renderer.renderExport(doc, core::View::Normal, pixels, &error),
+          "normal edge reference renders");
+
+    int edgePixels = 0;
+    const int y = doc.height / 2;
+    for (int x = doc.width / 2 - 10; x < doc.width / 2 + 10; ++x) {
+        const int green =
+            pixels[(static_cast<size_t>(y) * doc.width + x) * 4 + 1];
+        if (std::abs(green - 127) > 20) ++edgePixels;
+    }
+    check(edgePixels <= 4,
+          "texel-fetched normal edge stays within four pixels");
+}
+
 void testDetailOrientation(gpu::Renderer& renderer) {
     core::Document doc;
     doc.id = 3;
@@ -373,6 +416,7 @@ int main() {
     testDepthOrientation(renderer);
     testDepthSmoothing(renderer);
     testNormalSlopeClamp(renderer);
+    testNormalEdgeWidth(renderer);
     testDetailOrientation(renderer);
     testNormalFlip(renderer);
     testQualitySettings(renderer);
