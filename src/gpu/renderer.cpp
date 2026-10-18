@@ -594,6 +594,7 @@ std::size_t renderStateHash(const core::Document& doc) {
     addFloat(doc.settings.smooth);
     addInt(doc.settings.lineAssist ? 1 : 0);
     addFloat(doc.settings.normalStrength);
+    addFloat(doc.settings.detail);
     addInt(doc.settings.flipX ? 1 : 0);
     addInt(doc.settings.flipY ? 1 : 0);
     addInt(doc.settings.flipZ ? 1 : 0);

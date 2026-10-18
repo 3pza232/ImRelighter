@@ -35,9 +35,21 @@ bool sliderIntRow(app::App& app, const char* labelKey, int& value, int min,
     ImGui::PushID(labelKey);
     formLabel(app.tr(labelKey).c_str(), scaled(kLabelWidth));
     ImGui::SetNextItemWidth(-1.0f);
-    const bool changed = ImGui::SliderInt("##value", &value, min, max);
+    float dragged = static_cast<float>(value);
+    const bool changed = ImGui::SliderFloat(
+        "##value", &dragged, static_cast<float>(min), static_cast<float>(max),
+        "%.0f", ImGuiSliderFlags_AlwaysClamp);
+    if (changed) {
+        const int rounded = std::clamp(
+            static_cast<int>(std::lround(dragged)), min, max);
+        if (rounded != value) {
+            value = rounded;
+            ImGui::PopID();
+            return true;
+        }
+    }
     ImGui::PopID();
-    return changed;
+    return false;
 }
 
 bool checkboxRow(app::App& app, const char* labelKey, bool& value) {

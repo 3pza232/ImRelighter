@@ -69,6 +69,10 @@ void main() {
     detail = clamp(detail, vec2(-0.08), vec2(0.08));
     slope += detail * uDetailStrength * 8.0;
 
+    // Depth discontinuities are handled by the lighting pass through
+    // outNormal.a; keep their actual slope here so the normal view does not
+    // grow a neutral band around silhouettes.
+
     // Relative depth has no reliable absolute scale. Soft-saturating the slope
     // keeps the upsampled depth ramp from turning into a near-horizontal normal
     // without flattening whole regions into a constant plane.
