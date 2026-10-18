@@ -122,7 +122,7 @@ bool App::initializeWindow() {
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
 
-    int width = 1440;
+    int width = 1500;
     int height = 900;
     if (GLFWmonitor* monitor = glfwGetPrimaryMonitor()) {
         int mx = 0;
@@ -373,7 +373,12 @@ void App::drawFrame() {
                 requestOpenImage();
             }
             if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
-                ui.exportPopupRequested = true;
+                const core::Document* doc = activeDocument();
+                if (doc && doc->hasDepth && !exportBusy()) {
+                    ui.exportPopupRequested = true;
+                } else {
+                    setStatus(tr("depth.not_generated"));
+                }
             }
             if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_G, false)) {
                 generateDepth();
@@ -439,18 +444,31 @@ void App::requestOpenImage() {
                                       paths::fromUtf8(tr("topbar.open")).c_str());
     if (paths.empty()) return;
 
-    std::string error;
+    std::string firstError;
+    int failed = 0;
     uint64_t lastOpened = 0;
     for (const auto& path : paths) {
+        std::string error;
         const uint64_t id = addDocument(path, &error);
-        if (id != 0) lastOpened = id;
+        if (id != 0) {
+            lastOpened = id;
+        } else {
+            ++failed;
+            if (firstError.empty()) firstError = std::move(error);
+        }
     }
 
     if (lastOpened != 0) {
-        clearStatus();
         activateDocument(lastOpened);
-    } else if (!error.empty()) {
-        setStatus(error, 10.0);
+        if (failed > 0) {
+            setStatus(tr("document.open_partial") + " (" +
+                          std::to_string(failed) + "): " + firstError,
+                      10.0);
+        } else {
+            clearStatus();
+        }
+    } else if (!firstError.empty()) {
+        setStatus(firstError, 10.0);
     }
 }
 
@@ -460,7 +478,10 @@ uint64_t App::addDocument(const std::filesystem::path& path, std::string* error)
     limits.memoryGb = config.memoryLimitGb;
     limits.taskLimitMessage = tr("document.limit");
     limits.memoryLimitMessage = tr("document.memory");
-    return documents_.add(path, limits, error);
+    limits.thumbnailFailedMessage = tr("document.thumbnail_failed");
+    const uint64_t id = documents_.add(path, limits, error);
+    if (id != 0) ui.scrollToTask = id;
+    return id;
 }
 
 void App::activateDocument(uint64_t id) {
@@ -532,7 +553,7 @@ void App::exportImage(core::ExportKind kind) {
     }
 
     if (!renderer_) {
-        setStatus("Renderer is not available.", 10.0);
+        setStatus(tr("export.renderer_unavailable"), 10.0);
         return;
     }
 
@@ -556,7 +577,11 @@ void App::generateDepth() {
     core::Document* doc = activeDocument();
     if (!doc) return;
     if (inference_.busy()) {
-        setStatus(tr("depth.running"), 0.0, true);
+        setStatus(tr("depth.other_running"), 6.0);
+        return;
+    }
+    if (modelPath().empty()) {
+        setStatus(tr("model.not_selected"), 6.0);
         return;
     }
     if (!modelExists()) {

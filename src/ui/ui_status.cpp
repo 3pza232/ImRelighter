@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <string>
 
 #include "app/app.h"
@@ -17,15 +18,30 @@ void drawStatusBar(app::App& app) {
                      ImGuiWindowFlags_NoScrollbar |
                          ImGuiWindowFlags_NoScrollWithMouse);
         if (status) {
-            const float y = (scaled(kStatusHeight) - ImGui::GetTextLineHeight()) * 0.5f;
-            ImGui::SetCursorPos(ImVec2(20.0f, y));
-            ImGui::TextDisabled("%s", app.statusText().c_str());
-
+            const float y =
+                (scaled(kStatusHeight) - ImGui::GetTextLineHeight()) * 0.5f;
             const std::string right =
                 "OpenGL 4.5  ·  " + backendLabel(app, app.config.backend);
             const float rightWidth = ImGui::CalcTextSize(right.c_str()).x;
-            ImGui::SameLine(ImGui::GetWindowWidth() - rightWidth - 20.0f);
+            const float rightX =
+                ImGui::GetWindowWidth() - rightWidth - scaled(20.0f);
+            ImGui::SetCursorPos(ImVec2(rightX, y));
             ImGui::TextDisabled("%s", right.c_str());
+
+            const float leftX = scaled(20.0f);
+            const float leftEnd = std::max(leftX, rightX - scaled(12.0f));
+            ImGui::PushClipRect(
+                ImVec2(leftX, y),
+                ImVec2(leftEnd, y + ImGui::GetTextLineHeight()), true);
+            ImGui::SetCursorPos(ImVec2(leftX, y));
+            ImGui::TextDisabled("%s", app.statusText().c_str());
+            const bool statusHovered = ImGui::IsItemHovered();
+            ImGui::PopClipRect();
+            if (statusHovered &&
+                ImGui::CalcTextSize(app.statusText().c_str()).x >
+                    leftEnd - leftX) {
+                ImGui::SetTooltip("%s", app.statusText().c_str());
+            }
         }
     }
     ImGui::PopStyleColor();

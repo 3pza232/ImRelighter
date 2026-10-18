@@ -25,8 +25,16 @@ void drawTaskCard(app::App& app, size_t index, uint64_t& activateId,
         0.0f, rowWidth - scaled(kTaskCloseWidth) - scaled(kTaskCloseGap));
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    const bool hovered = ImGui::IsMouseHoveringRect(
-        rowStart, ImVec2(rowStart.x + barWidth, rowStart.y + scaled(kTaskRowHeight)));
+    ImGui::PushID(static_cast<int>(doc->id));
+    ImGui::SetCursorScreenPos(rowStart);
+    ImGui::InvisibleButton("##card",
+                           ImVec2(barWidth, scaled(kTaskRowHeight)));
+    const bool hovered = ImGui::IsItemHovered();
+    if (ImGui::IsItemClicked()) activateId = doc->id;
+    if (active && app.ui.scrollToTask == doc->id) {
+        ImGui::SetScrollHereY(0.5f);
+        app.ui.scrollToTask = 0;
+    }
     if (active || hovered) {
         draw->AddRectFilled(rowStart,
                             ImVec2(rowStart.x + barWidth, rowStart.y + scaled(kTaskRowHeight)),
@@ -45,11 +53,6 @@ void drawTaskCard(app::App& app, size_t index, uint64_t& activateId,
     // offsets used to be raw pixels while the thumbnail followed scaled().
     const float textX = rowStart.x + padding + thumbSize + scaled(10.0f);
     const float top = rowStart.y + (scaled(kTaskRowHeight) - thumbSize) * 0.5f;
-
-    ImGui::PushID(static_cast<int>(doc->id));
-    ImGui::SetCursorScreenPos(ImVec2(rowStart.x + padding, top));
-    ImGui::InvisibleButton("##thumbnail", ImVec2(thumbSize, thumbSize));
-    if (ImGui::IsItemClicked()) activateId = doc->id;
 
     const ImVec2 thumbPos = ImVec2(rowStart.x + padding, top);
     draw->AddRectFilled(thumbPos,
@@ -114,22 +117,30 @@ void drawSidebar(app::App& app) {
 
         if (!open) {
             if (sidebar) {
-                ImGui::SetCursorPos(ImVec2(8.0f, 12.0f));
-                if (iconButton("##expand", "»", ImVec2(22.0f, 26.0f))) {
+                const float buttonWidth = scaled(22.0f);
+                const float buttonHeight = scaled(26.0f);
+                const float buttonX =
+                    (ImGui::GetWindowWidth() - buttonWidth) * 0.5f;
+                ImGui::SetCursorPos(ImVec2(buttonX, scaled(12.0f)));
+                if (iconButton("##expand", "»",
+                               ImVec2(buttonWidth, buttonHeight))) {
                     app.ui.sidebarOpen = true;
                     if (core::Document* doc = app.activeDocument()) {
                         doc->fitPending = true;
                     }
                 }
-                ImGui::SetCursorPos(ImVec2(8.0f, 46.0f));
-                if (iconButton("##open", "+", ImVec2(22.0f, 26.0f))) {
+                ImGui::SetCursorPos(
+                    ImVec2(buttonX, scaled(12.0f) + buttonHeight + scaled(8.0f)));
+                if (iconButton("##open", "+",
+                               ImVec2(buttonWidth, buttonHeight))) {
                     app.requestOpenImage();
                 }
                 const std::string countText =
                     std::to_string(static_cast<int>(app.documentCount()));
                 const float countWidth = ImGui::CalcTextSize(countText.c_str()).x;
                 ImGui::SetCursorPos(
-                    ImVec2(8.0f + (22.0f - countWidth) * 0.5f, 84.0f));
+                    ImVec2((ImGui::GetWindowWidth() - countWidth) * 0.5f,
+                           scaled(12.0f) + buttonHeight * 2.0f + scaled(16.0f)));
                 ImGui::TextDisabled("%s", countText.c_str());
             }
             ImGui::PopStyleColor();
@@ -138,23 +149,26 @@ void drawSidebar(app::App& app) {
 
         if (sidebar) {
             const float lineHeight = ImGui::GetTextLineHeight();
-            ImGui::SetCursorPos(ImVec2(16.0f, 14.0f));
+            ImGui::SetCursorPos(ImVec2(scaled(16.0f), scaled(14.0f)));
             ImGui::TextUnformatted(app.tr("sidebar.title").c_str());
             ImGui::SameLine();
             ImGui::TextDisabled("%d", static_cast<int>(app.documentCount()));
-            ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - 32.0f, 14.0f));
-            if (iconButton("##collapse", "«", ImVec2(22.0f, 24.0f))) {
+            ImGui::SetCursorPos(
+                ImVec2(ImGui::GetWindowWidth() - scaled(32.0f), scaled(14.0f)));
+            if (iconButton("##collapse", "«",
+                           ImVec2(scaled(22.0f), scaled(24.0f)))) {
                 app.ui.sidebarOpen = false;
                 if (core::Document* doc = app.activeDocument()) {
                     doc->fitPending = true;
                 }
             }
 
-            ImGui::SetCursorPos(ImVec2(0.0f, 14.0f + lineHeight + 12.0f));
+            ImGui::SetCursorPos(
+                ImVec2(0.0f, scaled(14.0f) + lineHeight + scaled(12.0f)));
             ImGui::Separator();
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + scaled(10.0f));
 
-            const float footer = ImGui::GetFrameHeight() + 28.0f;
+            const float footer = ImGui::GetFrameHeight() + scaled(28.0f);
             {
                 Panel tasklist("##tasklist", ImVec2(0.0f, -footer), 12.0f);
                 if (tasklist) {
@@ -184,9 +198,11 @@ void drawSidebar(app::App& app) {
             }
 
             ImGui::Separator();
-            ImGui::SetCursorPosX(16.0f);
-            if (ImGui::Button(app.tr("sidebar.open").c_str(),
-                              ImVec2(ImGui::GetContentRegionAvail().x - 16.0f, 0.0f))) {
+            ImGui::SetCursorPosX(scaled(16.0f));
+            if (ImGui::Button(
+                    app.tr("sidebar.open").c_str(),
+                    ImVec2(ImGui::GetContentRegionAvail().x - scaled(16.0f),
+                           0.0f))) {
                 app.requestOpenImage();
             }
         }

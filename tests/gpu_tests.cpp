@@ -199,6 +199,42 @@ void testDepthSmoothing(gpu::Renderer& renderer) {
     check(maxDifference >= 1, "smooth > 0 changes the depth view");
 }
 
+void testNormalSlopeClamp(gpu::Renderer& renderer) {
+    core::Document doc;
+    doc.id = 2;
+    doc.width = 128;
+    doc.height = 128;
+    doc.hasDepth = true;
+    doc.color.assign(static_cast<size_t>(doc.width) * doc.height * 4, 128);
+    doc.depth.resize(static_cast<size_t>(doc.width) * doc.height);
+    for (int y = 0; y < doc.height; ++y) {
+        for (int x = 0; x < doc.width; ++x) {
+            const int sourceY = doc.height - 1 - y;
+            doc.depth[static_cast<size_t>(sourceY) * doc.width + x] =
+                x < doc.width / 2 ? 0.15f : 0.85f;
+        }
+    }
+    doc.settings.height = 1.0f;
+    doc.settings.smooth = 0.0f;
+    doc.settings.normalStrength = 1.0f;
+    doc.settings.rim = 0.0f;
+    doc.settings.specular = 0.0f;
+    doc.lights.clear();
+
+    const auto image = render(renderer, doc, core::View::Normal);
+    if (image.empty()) return;
+    double minimumNz = 1.0;
+    for (int y = 1; y + 1 < doc.height; ++y) {
+        for (int x = doc.width / 2 - 2; x <= doc.width / 2 + 1; ++x) {
+            const size_t i = (static_cast<size_t>(y) * doc.width + x) * 4;
+            minimumNz = std::min(
+                minimumNz, static_cast<double>(image[i + 2]) / 127.5 - 1.0);
+        }
+    }
+    check(minimumNz > 0.35,
+          "normal slope is clamped at depth discontinuities");
+}
+
 void testQualitySettings(gpu::Renderer& renderer) {
     core::Document doc = makeDocument();
     doc.settings.previewLongEdge = 1024;
@@ -286,6 +322,7 @@ int main() {
     testFlatShadow(renderer);
     testDepthOrientation(renderer);
     testDepthSmoothing(renderer);
+    testNormalSlopeClamp(renderer);
     testNormalFlip(renderer);
     testQualitySettings(renderer);
     testAlpha(renderer);

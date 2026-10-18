@@ -25,27 +25,35 @@ void main() {
         return;
     }
 
-    vec4 centerColor = texture(uColor, vUv);
+    // Color is uploaded top-down while depth is bottom-up, so the color
+    // lookups need an explicit V flip to stay on the same image row.
+    vec2 colorUv = vec2(vUv.x, 1.0 - vUv.y);
+    vec4 centerColor = texture(uColor, colorUv);
     if (centerColor.a < 0.01) {
         outHeight = center;
         return;
     }
 
     const vec2 texel = 1.0 / max(uImageSize, vec2(1.0));
+    float sigma = clamp(0.75 + 0.75 * uSmooth, 0.75, 3.5);
+    int radius = int(clamp(ceil(sigma * 1.5), 1.0, 4.0));
     float sum = 0.0;
     float weightSum = 0.0;
-    for (int y = -2; y <= 2; ++y) {
-        for (int x = -2; x <= 2; ++x) {
+    for (int y = -4; y <= 4; ++y) {
+        for (int x = -4; x <= 4; ++x) {
+            if (abs(x) > radius || abs(y) > radius) {
+                continue;
+            }
             vec2 uv = vUv + vec2(float(x), float(y)) * texel;
             if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
                 continue;
             }
-            vec4 color = texture(uColor, uv);
+            vec4 color = texture(uColor, vec2(uv.x, 1.0 - uv.y));
             if (color.a < 0.01) {
                 continue;
             }
             float n = normalizedDepth(uv);
-            float weight = exp(-float(x * x + y * y) / 4.0);
+            float weight = exp(-float(x * x + y * y) / (2.0 * sigma * sigma));
             weight *= exp(-abs(n - center) * 60.0);
             if (uLineAssist != 0) {
                 weight *= exp(-length(color.rgb - centerColor.rgb) * 12.0);

@@ -84,9 +84,13 @@ void drawImageSection(app::App& app) {
     if (!doc) doc = &fallback;
 
     ImGui::SeparatorText(app.tr("panel.image.model").c_str());
+    const bool noModel = app.modelPath().empty();
     const bool modelReady = app.modelExists();
-    ImGui::TextColored(modelReady ? theme::ok : theme::danger, "%s",
-                       app.tr(modelReady ? "model.ready" : "model.missing").c_str());
+    ImGui::TextColored(
+        noModel ? theme::muted : (modelReady ? theme::ok : theme::danger), "%s",
+        app.tr(noModel ? "model.not_selected"
+                       : (modelReady ? "model.ready" : "model.missing"))
+            .c_str());
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("panel.image.depth").c_str());
@@ -116,15 +120,19 @@ void drawImageSection(app::App& app) {
     ImGui::SameLine(scaled(kLabelWidth));
     const core::Document* active = app.activeDocument();
     const bool hasDepth = active && active->hasDepth;
-    const bool running = app.inferenceBusy();
-    ImGui::TextDisabled("%s",
-                        app.tr(running ? "depth.running"
-                                       : hasDepth ? "depth.ready"
-                                                  : "depth.not_generated")
-                            .c_str());
+    const bool inferenceBusy = app.inferenceBusy();
+    const bool runningThis =
+        inferenceBusy && active && app.inferenceDocumentId() == active->id;
+    const bool runningOther = inferenceBusy && !runningThis;
+    ImGui::TextDisabled(
+        "%s", app.tr(runningThis ? "depth.running"
+                                 : runningOther ? "depth.other_running"
+                                                : hasDepth ? "depth.ready"
+                                                           : "depth.not_generated")
+                  .c_str());
 
     ImGui::Spacing();
-    const bool canGenerate = app.hasTask() && !running;
+    const bool canGenerate = app.hasTask() && !inferenceBusy;
     if (canGenerate) {
         ImGui::PushStyleColor(ImGuiCol_Button, theme::accent);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme::accentHover);
@@ -138,7 +146,7 @@ void drawImageSection(app::App& app) {
     ImGui::EndDisabled();
     if (canGenerate) ImGui::PopStyleColor(3);
 
-    if (running) {
+    if (runningThis) {
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Button, theme::danger);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme::dangerHover);
@@ -170,16 +178,19 @@ void drawLightSection(app::App& app) {
 
     for (auto& light : doc->lights) {
         ImGui::PushID(light.id);
+        if (!light.enabled) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
         ImGui::PushStyleColor(ImGuiCol_Text, hexToVec4(light.color));
         ImGui::TextUnformatted("●");
         ImGui::PopStyleColor();
         ImGui::SameLine();
-        const std::string label =
+        std::string label =
             app.tr("light.name") + " " + std::to_string(light.id);
+        if (!light.enabled) label += " · " + app.tr("light.off");
         if (ImGui::Selectable(label.c_str(),
                               doc->selectedLight == light.id)) {
             doc->selectedLight = light.id;
         }
+        if (!light.enabled) ImGui::PopStyleVar();
         ImGui::PopID();
     }
 
@@ -209,7 +220,12 @@ void drawLightSection(app::App& app) {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button(app.tr("light.toggle").c_str())) {
+    bool selectedEnabled = true;
+    for (const auto& light : doc->lights) {
+        if (light.id == doc->selectedLight) selectedEnabled = light.enabled;
+    }
+    if (ImGui::Button(
+            app.tr(selectedEnabled ? "light.disable" : "light.enable").c_str())) {
         for (auto& light : doc->lights) {
             if (light.id == doc->selectedLight) {
                 light.enabled = !light.enabled;

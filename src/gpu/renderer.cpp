@@ -14,9 +14,18 @@
 namespace gpu {
 namespace {
 
-std::array<float, 3> parseColor(const std::string& hex) {
+// Light and ambient colors are authored in sRGB, while the lighting shader
+// accumulates radiance in linear space.
+float srgbToLinear(float value) {
+    return value <= 0.04045f ? value / 12.92f
+                             : std::pow((value + 0.055f) / 1.055f, 2.4f);
+}
+
+std::array<float, 3> parseLinearColor(const std::string& hex) {
     constexpr std::array<float, 3> kFallback{1.0f, 1.0f, 1.0f};
-    return core::parseHexColor(hex).value_or(kFallback);
+    const auto srgb = core::parseHexColor(hex).value_or(kFallback);
+    return {srgbToLinear(srgb[0]), srgbToLinear(srgb[1]),
+            srgbToLinear(srgb[2])};
 }
 
 size_t combine(size_t seed, size_t value) {
@@ -305,7 +314,7 @@ void Renderer::bindLights(const Shader& shader, const core::Document& doc) {
             positions[static_cast<size_t>(i * 3 + axis)] =
                 light.position[static_cast<size_t>(axis)];
         }
-        const auto color = parseColor(light.color);
+        const auto color = parseLinearColor(light.color);
         for (int axis = 0; axis < 3; ++axis) {
             colors[static_cast<size_t>(i * 3 + axis)] =
                 color[static_cast<size_t>(axis)];
@@ -340,9 +349,6 @@ void Renderer::renderPasses(const core::Document& doc, core::View view) {
 }
 
 void Renderer::passDepth(const core::Document& doc) {
-    const float imageWidth = static_cast<float>(doc.width);
-    const float imageHeight = static_cast<float>(doc.height);
-
     glBindFramebuffer(GL_FRAMEBUFFER, height_.framebuffer);
     glViewport(0, 0, preview_.width, preview_.height);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -354,7 +360,9 @@ void Renderer::passDepth(const core::Document& doc) {
     glBindTexture(GL_TEXTURE_2D, depthTexture_);
     depthShader_.setInt("uColor", 0);
     depthShader_.setInt("uDepth", 1);
-    depthShader_.setVec2("uImageSize", imageWidth, imageHeight);
+    depthShader_.setVec2("uImageSize",
+                         static_cast<float>(preview_.width),
+                         static_cast<float>(preview_.height));
     const float depthLow =
         doc.settings.autoDepthRange ? 0.0f : doc.settings.depthMin;
     const float depthHigh =
@@ -384,6 +392,10 @@ void Renderer::passNormal(const core::Document& doc) {
     normalShader_.setVec2("uTexel", 1.0f / static_cast<float>(preview_.width),
                           1.0f / static_cast<float>(preview_.height));
     normalShader_.setVec2("uImageSize", imageWidth, imageHeight);
+    normalShader_.setFloat(
+        "uPixelScale",
+        static_cast<float>(doc.width) / static_cast<float>(preview_.width));
+    normalShader_.setFloat("uMaxTilt", 1.5f);
     normalShader_.setFloat("uAmplitude",
                            std::max(doc.settings.height, 0.001f));
     normalShader_.setFloat("uNormalStrength", doc.settings.normalStrength);
@@ -480,7 +492,7 @@ void Renderer::passLighting(const core::Document& doc, core::View view) {
     lightingShader_.setVec2("uImageSize", imageWidth, imageHeight);
     lightingShader_.setFloat("uAmplitude",
                              std::max(doc.settings.height, 0.001f));
-    const auto ambient = parseColor(doc.settings.ambientColor);
+    const auto ambient = parseLinearColor(doc.settings.ambientColor);
     lightingShader_.setVec3("uAmbientColor", ambient.data());
     lightingShader_.setFloat("uAmbient", doc.settings.ambient);
     lightingShader_.setFloat("uWrap", doc.settings.wrap);

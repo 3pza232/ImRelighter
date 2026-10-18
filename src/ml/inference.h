@@ -46,6 +46,9 @@ public:
     void stop();
 
     bool busy() const { return busy_.load(); }
+    std::uint64_t activeDocumentId() const {
+        return activeDocumentId_.load();
+    }
     bool submit(InferenceJob job);
     void cancel();
     bool poll(InferenceResult& result);
@@ -62,6 +65,7 @@ private:
     std::optional<InferenceResult> result_;
     std::atomic<bool> busy_{false};
     std::atomic<bool> cancelRequested_{false};
+    std::atomic<std::uint64_t> activeDocumentId_{0};
     bool stopping_ = false;
 
     OnnxRuntime runtime_;

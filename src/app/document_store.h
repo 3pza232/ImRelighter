@@ -21,6 +21,7 @@ public:
         int memoryGb = 4;
         std::string taskLimitMessage;
         std::string memoryLimitMessage;
+        std::string thumbnailFailedMessage;
     };
 
     struct CloseResult {

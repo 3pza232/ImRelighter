@@ -45,6 +45,16 @@ vec3 encode(vec3 color) {
                step(vec3(0.0031308), color));
 }
 
+vec3 tonemap(vec3 color) {
+    // Preserve the normal exposure range and roll off only highlights, so
+    // individual channels do not clip at different points and shift hue.
+    const vec3 knee = vec3(0.8);
+    color = max(color, vec3(0.0));
+    vec3 over = max(color - knee, vec3(0.0));
+    return min(color, knee) +
+           (vec3(1.0) - knee) * (vec3(1.0) - exp(-over / (vec3(1.0) - knee)));
+}
+
 vec3 positionAt(vec2 uv, float height) {
     float aspect = uImageSize.x / max(uImageSize.y, 1.0);
     return vec3((uv * 2.0 - 1.0) * vec2(aspect, -1.0), height);
@@ -55,7 +65,9 @@ void main() {
     vec3 base = linearize(source.rgb);
     float height = texture(uHeight, vUv).r;
     // The normal pass writes an FBO stored bottom-up; flip V only here.
-    vec3 n = normalize(texture(uNormal, vec2(vUv.x, 1.0 - vUv.y)).rgb * 2.0 - 1.0);
+    vec4 normalSample = texture(uNormal, vec2(vUv.x, 1.0 - vUv.y));
+    vec3 n = normalize(normalSample.rgb * 2.0 - 1.0);
+    float edgeMask = clamp(normalSample.a, 0.0, 1.0);
     vec3 p = positionAt(vUv, height * uAmplitude);
 
     vec4 shadow0 = texture(uBlur0, vUv);
@@ -91,8 +103,12 @@ void main() {
         vec3 halfVector = normalize(l + vec3(0.0, 0.0, 1.0));
         float shine = pow(max(dot(n, halfVector), 0.0), max(uShininess, 1.0)) *
                       uSpecular * step(0.0, ndl);
-        float edge = pow(1.0 - max(n.z, 0.0), 3.0) * max(ndl, 0.0) * uRim;
-        highlights += radiance * (shine + edge) * vis;
+        float rim = pow(1.0 - max(n.z, 0.0), 3.0) * max(ndl, 0.0) * uRim;
+        // Depth discontinuities are not real surface curvature. Fade the
+        // additive highlights there to avoid colored halos on silhouettes.
+        shine *= 1.0 - 0.6 * edgeMask;
+        rim *= 1.0 - edgeMask;
+        highlights += radiance * (shine + rim) * vis;
     }
 
     vec3 ambientLight = uAmbientColor * uAmbient;
@@ -105,9 +121,9 @@ void main() {
 
     vec3 outputColor = base;
     if (uViewMode == 0) {
-        outputColor = result;
+        outputColor = tonemap(result);
     } else if (uViewMode == 1) {
-        outputColor = vUv.x < uComparison ? base : result;
+        outputColor = vUv.x < uComparison ? base : tonemap(result);
     } else if (uViewMode == 2) {
         outputColor = base;
     } else if (uViewMode == 3) {
@@ -115,7 +131,7 @@ void main() {
     } else if (uViewMode == 4) {
         outputColor = vec3(height / max(uAmplitude, 0.001));
     } else if (uViewMode == 5) {
-        outputColor = illumination + highlights;
+        outputColor = tonemap(illumination + highlights);
     } else if (uViewMode == 6) {
         float selected = uSelectedLight >= 0 ? visibility[clamp(uSelectedLight, 0, 7)] : 1.0;
         outputColor = vec3(selected);

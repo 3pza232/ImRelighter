@@ -7,8 +7,10 @@ uniform sampler2D uHeight;
 uniform sampler2D uColor;
 uniform vec2 uTexel;
 uniform vec2 uImageSize;
+uniform float uPixelScale;
 uniform float uAmplitude;
 uniform float uNormalStrength;
+uniform float uMaxTilt;
 uniform vec3 uFlips;
 
 float heightAt(vec2 uv) {
@@ -16,7 +18,10 @@ float heightAt(vec2 uv) {
 }
 
 void main() {
-    const vec2 texel = 1.0 / max(uImageSize, vec2(1.0));
+    // Sample the height target directly so preview and export use the same
+    // footprint in output pixels. uPixelScale converts the preview gradient
+    // back to source-image pixels for a resolution-independent slope.
+    vec2 texel = uTexel;
     float c = heightAt(vUv);
     float l = heightAt(vUv - vec2(texel.x, 0.0));
     float r = heightAt(vUv + vec2(texel.x, 0.0));
@@ -34,14 +39,25 @@ void main() {
     if (min(abs(r - c), abs(l - c)) > limit) dx = 0.0;
     if (min(abs(u - c), abs(b - c)) > limit) dy = 0.0;
 
-    // Gradients are sampled in source-image UV space, matching the reference
-    // pipeline at both preview and export resolutions.
-    vec3 n = normalize(vec3(-dx * uImageSize.y * 0.5,
-                            dy * uImageSize.y * 0.5,
-                            1.0));
-    n.xy *= uNormalStrength;
+    float jump = max(max(abs(r - c), abs(l - c)),
+                     max(abs(u - c), abs(b - c)));
+    float edgeMask = smoothstep(0.08, 0.22,
+                                jump / max(uAmplitude, 1e-3));
+
+    float scale = max(uPixelScale, 1e-6);
+    vec2 slope = vec2(-dx / scale, dy / scale) * uImageSize.y * 0.5;
+    slope *= uNormalStrength;
+    // Relative depth has no reliable absolute scale. Limiting the slope keeps
+    // the upsampled depth ramp from turning into a near-horizontal normal and
+    // painting a wide rim highlight around silhouettes.
+    float slopeLength = length(slope);
+    if (slopeLength > uMaxTilt) {
+        slope *= uMaxTilt / slopeLength;
+    }
+
+    vec3 n = normalize(vec3(slope, 1.0));
     n *= uFlips;
     n = normalize(n);
 
-    outNormal = vec4(n * 0.5 + 0.5, texture(uColor, vUv).a);
+    outNormal = vec4(n * 0.5 + 0.5, edgeMask);
 }

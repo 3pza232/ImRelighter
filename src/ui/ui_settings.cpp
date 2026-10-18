@@ -45,8 +45,13 @@ std::string formatMegabytes(std::uintmax_t bytes) {
 void drawSettings(app::App& app) {
     if (!app.ui.settingsOpen) return;
 
-    Dialog settings("##settings_window", ImVec2(scaled(680.0f), scaled(520.0f)),
-                    scaled(22.0f));
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const ImVec2 dialogSize(
+        std::min(scaled(680.0f), std::max(scaled(360.0f),
+                                         display.x - scaled(32.0f))),
+        std::min(scaled(520.0f), std::max(scaled(280.0f),
+                                         display.y - scaled(32.0f))));
+    Dialog settings("##settings_window", dialogSize, scaled(22.0f));
     if (settings) {
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
         {
@@ -68,25 +73,27 @@ void drawSettings(app::App& app) {
                 formLabel(app.tr("settings.theme").c_str(), scaled(kSettingsLabelWidth));
                 if (segmentButton(app.tr("settings.theme.dark").c_str(),
                                   app.theme() == core::Theme::Dark,
-                                  ImVec2(80.0f, 0.0f))) {
+                                  ImVec2(scaled(80.0f), 0.0f))) {
                     app.setTheme(core::Theme::Dark);
                 }
                 ImGui::SameLine();
                 if (segmentButton(app.tr("settings.theme.light").c_str(),
                                   app.theme() == core::Theme::Light,
-                                  ImVec2(80.0f, 0.0f))) {
+                                  ImVec2(scaled(80.0f), 0.0f))) {
                     app.setTheme(core::Theme::Light);
                 }
 
                 ImGui::Spacing();
                 formLabel(app.tr("settings.language").c_str(), scaled(kSettingsLabelWidth));
-                if (segmentButton("简体中文", app.language() == core::Language::ZhCN,
-                                  ImVec2(110.0f, 0.0f))) {
+                if (segmentButton("简体中文",
+                                  app.language() == core::Language::ZhCN,
+                                  ImVec2(scaled(110.0f), 0.0f))) {
                     app.setLanguage(core::Language::ZhCN);
                 }
                 ImGui::SameLine();
-                if (segmentButton("English", app.language() == core::Language::EnUS,
-                                  ImVec2(100.0f, 0.0f))) {
+                if (segmentButton("English",
+                                  app.language() == core::Language::EnUS,
+                                  ImVec2(scaled(100.0f), 0.0f))) {
                     app.setLanguage(core::Language::EnUS);
                 }
 
@@ -94,13 +101,13 @@ void drawSettings(app::App& app) {
                 formLabel(app.tr("settings.backend").c_str(), scaled(kSettingsLabelWidth));
                 if (segmentButton(app.tr("settings.auto").c_str(),
                                   app.config.backend == core::Backend::Auto,
-                                  ImVec2(80.0f, 0.0f))) {
+                                  ImVec2(scaled(80.0f), 0.0f))) {
                     app.setBackend(core::Backend::Auto);
                 }
                 ImGui::SameLine();
                 if (segmentButton(app.tr("settings.cpu").c_str(),
                                   app.config.backend == core::Backend::Cpu,
-                                  ImVec2(70.0f, 0.0f))) {
+                                  ImVec2(scaled(70.0f), 0.0f))) {
                     app.setBackend(core::Backend::Cpu);
                 }
                 ImGui::SameLine();
@@ -108,7 +115,8 @@ void drawSettings(app::App& app) {
                 if (!dmlReady) ImGui::BeginDisabled();
                 if (segmentButton(app.tr("settings.dml").c_str(),
                                   app.config.backend == core::Backend::Dml,
-                                  ImVec2(100.0f, 0.0f)) && dmlReady) {
+                                  ImVec2(scaled(100.0f), 0.0f)) &&
+                     dmlReady) {
                     app.setBackend(core::Backend::Dml);
                 }
                 if (!dmlReady) ImGui::EndDisabled();
@@ -193,8 +201,10 @@ void drawSettings(app::App& app) {
                                 "%s",
                                 app.tr("settings.model_checking").c_str());
                         } else if (!app.modelInfoError().empty()) {
-                            ImGui::TextColored(theme::danger, "%s",
+                            ImGui::PushStyleColor(ImGuiCol_Text, theme::danger);
+                            ImGui::TextWrapped("%s",
                                                app.modelInfoError().c_str());
+                            ImGui::PopStyleColor();
                         } else {
                             ImGui::TextUnformatted(app.modelType().c_str());
                         }
@@ -202,7 +212,9 @@ void drawSettings(app::App& app) {
                     ImGui::Spacing();
                     ImGui::TextDisabled("%s",
                                         app.tr("settings.model_size").c_str());
-                    ImGui::TextUnformatted(formatMegabytes(app.modelSize()).c_str());
+                    ImGui::TextUnformatted(
+                        noModel ? "—"
+                                : formatMegabytes(app.modelSize()).c_str());
                     ImGui::Spacing();
                     ImGui::TextDisabled("%s",
                                         app.tr("settings.model_sha").c_str());
@@ -229,6 +241,7 @@ void drawSettings(app::App& app) {
                         native_dialog::openInExplorer(app.modelFolder());
                     }
                     ImGui::SameLine();
+                    ImGui::BeginDisabled(noModel);
                     ImGui::PushStyleColor(ImGuiCol_Button, theme::danger);
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme::dangerHover);
                     if (ImGui::Button(
@@ -237,6 +250,7 @@ void drawSettings(app::App& app) {
                         app.clearModelSelection();
                     }
                     ImGui::PopStyleColor(2);
+                    ImGui::EndDisabled();
                     }
                 }
                 ImGui::EndTabItem();

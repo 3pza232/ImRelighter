@@ -51,7 +51,7 @@ std::uint64_t DocumentStore::add(const std::filesystem::path& path,
 
     if (!io::makeThumbnail(*image, 160, doc->thumbnail, doc->thumbWidth,
                            doc->thumbHeight)) {
-        if (error) *error = "Failed to create thumbnail.";
+        if (error) *error = limits.thumbnailFailedMessage;
         return 0;
     }
 

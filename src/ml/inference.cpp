@@ -35,6 +35,7 @@ void InferenceService::stop() {
 
 bool InferenceService::submit(InferenceJob job) {
     if (busy_.exchange(true)) return false;
+    activeDocumentId_ = job.documentId;
     cancelRequested_ = false;
     {
         std::lock_guard lock(sessionMutex_);

@@ -26,6 +26,7 @@ struct UiState {
     bool settingsOpen = false;
     bool exportPopupRequested = false;
     int draggingLight = 0;
+    uint64_t scrollToTask = 0;
 
     std::string statusOverride;
     double statusExpiresAt = 0.0;
@@ -51,6 +52,9 @@ public:
 
     bool hasTask() const;
     bool inferenceBusy() const { return inference_.busy(); }
+    uint64_t inferenceDocumentId() const {
+        return inference_.activeDocumentId();
+    }
     bool exportBusy() const { return exports_.busy(); }
     size_t documentCount() const { return documents_.size(); }
     const core::Document* document(size_t index) const;

@@ -169,8 +169,28 @@ FontScale::~FontScale() {
 Dialog::Dialog(const char* id, const ImVec2& size, float padding,
                ImGuiWindowFlags flags) {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    ImGui::GetBackgroundDrawList()->AddRectFilled(
-        ImVec2(0.0f, 0.0f), display, theme::u32(theme::overlay));
+    // A background-list overlay is hidden by the opaque root window. Draw the
+    // dim layer as a separate, non-interactive window so it sits above the main
+    // UI but below the dialog created below.
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(display);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::Begin(
+        "##dialog_overlay", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_NoScrollWithMouse |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs |
+            ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        ImVec2(0.0f, 0.0f), display, theme::u32(theme::modalDim));
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
 
     ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
     ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f),
