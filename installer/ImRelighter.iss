@@ -3,7 +3,7 @@
 ; directory stay in sync with the current CMake build.
 
 #ifndef MyAppVersion
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.4.0"
 #endif
 
 #ifndef MyBuildDir
@@ -28,6 +28,12 @@ UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
+; Reuse the previous installation directory and task choices. This is what
+; makes an in-place upgrade feel like an update instead of a second install.
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
+UsePreviousGroup=yes
+UsePreviousLanguage=yes
 ; Per-user installation keeps the application directory writable. The app
 ; stores config.json next to the executable, so installing under Program Files
 ; would silently lose settings for non-elevated users.
@@ -66,8 +72,13 @@ Source: "{#MyBuildDir}\PATENTS*"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyBuildDir}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyBuildDir}\assets\*"; DestDir: "{app}\assets"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
+; Models are user data as much as application data. Keep an existing model
+; file even if the installer ships a file with the same name, add missing
+; default/new model files, and never delete the models folder on uninstall.
+; config.json is intentionally omitted from [Files], so it is preserved too.
 Source: "{#MyBuildDir}\models\*"; DestDir: "{app}\models"; \
-    Flags: ignoreversion recursesubdirs createallsubdirs
+    Flags: onlyifdoesntexist recursesubdirs createallsubdirs \
+    uninsneveruninstall
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

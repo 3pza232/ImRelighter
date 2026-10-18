@@ -1,4 +1,4 @@
-# ImRelighter 0.3.0
+# ImRelighter 0.4.0
 
 > 让一张图拥有可编辑的光。
 
@@ -11,15 +11,17 @@ ImRelighter 是 Windows 本地的单图重打光工具：在本地用 ONNX 模�
 - **本地推理**：ONNX Runtime C API，支持 CPU 与 DirectML；模型与 DLL 动态加载，缺失时可回退或给出明确提示。
 - **物理光照**：GGX / 经典 Blinn-Phong 可切换，内置自然、人像、电影、经典四种方案，以及柔和 / ACES 色调映射。
 - **实时渲染**：深度平滑、法线、阴影 MRT、模糊、最终光照；7 种视图与拆分对比线。
-- **多任务**：PNG / JPEG / WebP，多选打开、缩略图切换、独立参数与灯光。
-- **可编辑灯光**：最多 8 盏，位置、颜色、强度、范围与开关；画布拖动灯光。
+- **多任务**：PNG / JPEG / WebP，多选或拖拽打开、缩略图切换、独立参数与灯光。
+- **可编辑灯光**：最多 8 盏，点光/聚光、位置、颜色、强度、范围、光锥角度与柔化；复制、独奏、开关与三点/窗光/轮廓灯组预设。
+- **材质控制**：粗糙度、金属度、光泽、次表面，以及默认/皮肤/布料/头发/金属预设。
+- **工作流**：复制/粘贴任务外观，`Ctrl+Z` / `Ctrl+Y` 在当前进程内撤销/重做。
 - **导出**：RGBA8 光照 / 法线 / 仅光照 / 阴影，16 位灰度深度；全分辨率回读，PNG 编码异步执行。
 - **桌面体验**：中文 / English、暗色 / 亮色主题、高 DPI 缩放、设置模态、非 ASCII 路径支持。
 - **离线优先**：不联网、不上传图片、不自动下载模型。
 
 ## 安装
 
-发布页提供 `ImRelighter-0.3.0-setup.exe`。安装器支持简体中文与 English，按用户安装到 `%LOCALAPPDATA%\Programs\ImRelighter`，创建开始菜单项，并可选创建桌面快捷方式。卸载默认保留 `config.json`，便于重新安装后继续使用原有设置。
+发布页提供 `ImRelighter-0.4.0-setup.exe`。安装器支持简体中文与 English，按用户安装到 `%LOCALAPPDATA%\Programs\ImRelighter`，创建开始菜单项，并可选创建桌面快捷方式。升级会复用上次选择的安装目录，保留用户模型与 `config.json`；缺失的默认模型或新增模型会补装，卸载默认保留设置与模型目录。
 
 也可以直接解压运行目录使用，不写注册表。运行要求与安装器行为见 [docs/packaging.md](docs/packaging.md)。
 
@@ -68,7 +70,7 @@ cmake --build build
 powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1 -FetchVCRedist
 ```
 
-输出为 `dist/ImRelighter-0.3.0-setup.exe` 与对应 `.sha256`。
+输出为 `dist/ImRelighter-0.4.0-setup.exe` 与对应 `.sha256`。
 
 ## 运行
 
@@ -84,14 +86,16 @@ ImRelighter.exe a.png b.jpg c.webp
 
 | 操作 | 快捷键 / 方式 |
 |---|---|
-| 打开图片（可多选） | `Ctrl+O` |
+| 打开图片（可多选 / 拖拽） | `Ctrl+O` / 拖入窗口 |
 | 生成深度与法线 | `Ctrl+G` |
 | 导出 | `Ctrl+E` |
+| 复制 / 粘贴外观 | `Ctrl+Shift+C` / `Ctrl+Shift+V` |
+| 撤销 / 重做 | `Ctrl+Z` / `Ctrl+Y` |
 | 打开设置 | `Ctrl+,` |
 | 适应画布 | `F` |
 | 关闭设置 | `Esc` |
 | 缩放 / 平移 | 滚轮 / 中键拖动 |
-| 移动灯光 | 从灯光标记开始左键拖动 |
+| 移动灯光 | 点击画布任意位置，跟随拖动 |
 
 完整说明见 [docs/usage.md](docs/usage.md)。
 

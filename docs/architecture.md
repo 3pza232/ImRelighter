@@ -26,7 +26,7 @@ app  ──────────────► ui
 | `src/io` | 图片探测与解码、EXIF、WebP、PNG 导出、路径、哈希、原生对话框 | UI / 渲染 |
 | `src/ml` | ONNX Runtime 动态加载、模型配置与元数据、预处理/后处理、推理线程 | 渲染 / UI |
 | `src/gpu` | Shader、Texture、Renderer 与 5 个渲染 Pass | UI / 推理 |
-| `src/app` | 生命周期、任务集合、模型选择、导出调度、状态栏 | — |
+| `src/app` | 生命周期、任务集合、模型选择、导出调度、状态栏、外观剪贴板与撤销历史 | — |
 | `src/ui` | ImGui 布局、画布交互、右栏、设置、导出菜单 | — |
 
 `core` 是共享数据层：`Document` 同时被 UI、渲染和推理使用。UI 不再维护一份影子设置；所有任务参数都直接读写 `Document`。
@@ -130,7 +130,9 @@ Document::depth (bottom-up)
   → Lighting Pass     → 物理/经典光照 + 柔和/ACES 色调映射 → 预览或导出 FBO
 ```
 
-`Renderer::renderPreview()` 用 `renderStateHash(doc)` 判断参数是否变化；哈希必须覆盖所有会影响画面的输入，包括光照模型、色调映射、表面细节与灯光。新增渲染参数时，要同时更新 Pass 中的 uniform 和哈希。
+`Renderer::renderPreview()` 用 `renderStateHash(doc)` 判断参数是否变化；哈希必须覆盖所有会影响画面的输入，包括光照模型、色调映射、材质参数、表面细节、独奏状态与灯光类型。新增渲染参数时，要同时更新 Pass 中的 uniform 和哈希。
+
+灯光以小数组 uniform 传入着色器：位置、线性颜色、强度、范围、开关、类型、聚光半角余弦与柔化。独奏在 CPU 侧把非独奏灯标记为禁用；聚光方向由灯位指向画面中心。
 
 颜色纹理在 CPU 上传后生成 mipmap；Normal Pass 的表面细节按渲染分辨率选择亮度 LOD，避免单像素噪声变成法线尖峰。预览使用受限分辨率，导出时按原图尺寸重新渲染并回读。
 
@@ -160,7 +162,8 @@ Renderer 全分辨率渲染 → glReadPixels RGBA8
 - **方向**：图片解码后为 top-down；`Document::depth` 与 GL 上传使用 bottom-up；导出深度 PNG 时翻回 top-down。相关约定写在 `document.h`、`preprocess.cpp`、`png_export.cpp` 和 shader 注释中。
 - **颜色**：十六进制颜色统一由 `core::parseHexColor` 解析，非法值由调用方决定回退。
 - **路径**：内部统一 `std::filesystem::path`；与 ImGui/对话框交互时使用 UTF-8。字体与图标通过内存加载，支持中文和空格路径。
-- **配置**：`config.json` 写入 exe 同级目录；先写临时文件再原子替换，失败会显示状态栏错误。
+- **配置**：`config.json` 写入 exe 同级目录；先写临时文件再原子替换，失败会显示状态栏错误。读取时保留原始 JSON，保存时合并本版本不认识的字段。
+- **撤销/重做**：每个文档在内存中维护外观快照（设置、灯光、独奏与选择）；滑块/拖动在连续编辑停止后合并为一步，复制粘贴与重置作为单步提交。历史不写入磁盘。
 - **i18n**：所有 UI 文案来自 `assets/i18n/*.json`；新增键必须同步中英文，`tests/check_i18n_keys.py` 检查未使用键。
 - **资源上限**：单图默认 30 MP，可在设置中调整为 4–200 MP；任务数默认 100（最大 500）；内存默认 4 GB（最大 16 GB）。
 
