@@ -20,6 +20,9 @@ private:
     bool open_ = false;
 };
 
+// Button whose label is vertically centered when an explicit height is used.
+bool centeredButton(const char* label, const ImVec2& size);
+
 // Centered glyph button used by the sidebar and other compact controls.
 bool iconButton(const char* id, const char* glyph, const ImVec2& size);
 

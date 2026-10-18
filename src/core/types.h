@@ -49,6 +49,7 @@ struct Settings {
     float smooth = 1.0f;
     bool lineAssist = true;
     float normalStrength = 1.0f;
+    float detail = 0.25f;
 
     bool flipX = false;
     bool flipY = false;

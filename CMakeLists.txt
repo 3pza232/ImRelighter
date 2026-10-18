@@ -226,10 +226,18 @@ endif()
 # Runtime assets
 # ---------------------------------------------------------------------------
 
-add_custom_command(TARGET ImRelighter POST_BUILD
+# Assets are read at runtime, so keep the output tree in sync on every build.
+# A POST_BUILD command alone would leave edited shaders stale until relinking.
+add_custom_target(imrelighter_sync_assets ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:ImRelighter>/assets"
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             "${CMAKE_SOURCE_DIR}/assets"
             "$<TARGET_FILE_DIR:ImRelighter>/assets"
+    COMMENT "Syncing runtime assets")
+add_dependencies(ImRelighter imrelighter_sync_assets)
+
+add_custom_command(TARGET ImRelighter POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

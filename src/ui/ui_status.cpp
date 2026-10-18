@@ -28,11 +28,14 @@ void drawStatusBar(app::App& app) {
             ImGui::SetCursorPos(ImVec2(rightX, y));
             ImGui::TextDisabled("%s", right.c_str());
 
+            const ImVec2 origin = ImGui::GetWindowPos();
             const float leftX = scaled(20.0f);
             const float leftEnd = std::max(leftX, rightX - scaled(12.0f));
             ImGui::PushClipRect(
-                ImVec2(leftX, y),
-                ImVec2(leftEnd, y + ImGui::GetTextLineHeight()), true);
+                ImVec2(origin.x + leftX, origin.y + y),
+                ImVec2(origin.x + leftEnd,
+                       origin.y + y + ImGui::GetTextLineHeight()),
+                true);
             ImGui::SetCursorPos(ImVec2(leftX, y));
             ImGui::TextDisabled("%s", app.statusText().c_str());
             const bool statusHovered = ImGui::IsItemHovered();

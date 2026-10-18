@@ -246,8 +246,8 @@ void drawLightSection(app::App& app) {
         ImGui::Spacing();
         ImGui::SeparatorText(app.tr("section.selected_light").c_str());
         ImGui::TextUnformatted(app.tr("light.position").c_str());
-        const float positionMin[3] = {-2.0f, -2.0f, 0.1f};
-        const float positionMax[3] = {2.0f, 2.0f, 4.0f};
+        const float positionMin[3] = {-3.0f, -3.0f, 0.1f};
+        const float positionMax[3] = {3.0f, 3.0f, 4.0f};
         {
             Box positionBox("##position_box", ImVec2(0.0f, scaled(kPositionBoxHeight)),
                             10.0f, true);
@@ -259,9 +259,9 @@ void drawLightSection(app::App& app) {
 
         ImGui::Spacing();
         colorRow(app, "light.color", selected->color);
-        sliderRow(app, "light.intensity", selected->intensity, 0.0f, 8.0f,
+        sliderRow(app, "light.intensity", selected->intensity, 0.0f, 12.0f,
                   "%.2f");
-        sliderRow(app, "light.range", selected->range, 0.2f, 8.0f, "%.2f");
+        sliderRow(app, "light.range", selected->range, 0.2f, 12.0f, "%.2f");
     }
 
     ImGui::Spacing();
@@ -279,17 +279,17 @@ void drawShadingSection(app::App& app) {
 
     ImGui::SeparatorText(app.tr("section.environment").c_str());
     colorRow(app, "shading.ambient_color", doc->settings.ambientColor);
-    sliderRow(app, "shading.ambient", doc->settings.ambient, 0.0f, 2.0f,
+    sliderRow(app, "shading.ambient", doc->settings.ambient, 0.0f, 3.0f,
               "%.2f");
-    sliderRow(app, "shading.wrap", doc->settings.wrap, 0.0f, 1.0f, "%.2f");
+    sliderRow(app, "shading.wrap", doc->settings.wrap, 0.0f, 1.5f, "%.2f");
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.shadows").c_str());
     checkboxRow(app, "shading.shadows", doc->settings.shadows);
     ImGui::BeginDisabled(!doc->settings.shadows);
-    sliderRow(app, "shading.bias", doc->settings.bias, 0.0001f, 0.1f,
+    sliderRow(app, "shading.bias", doc->settings.bias, 0.0001f, 0.2f,
               "%.4f");
-    sliderRow(app, "shading.softness", doc->settings.softness, 0.0f, 0.25f,
+    sliderRow(app, "shading.softness", doc->settings.softness, 0.0f, 0.5f,
               "%.3f");
     ImGui::EndDisabled();
 
@@ -297,10 +297,10 @@ void drawShadingSection(app::App& app) {
     if (ImGui::CollapsingHeader(
             (app.tr("shading.highlights") + "###highlights").c_str())) {
         sliderRow(app, "shading.specular", doc->settings.specular, 0.0f,
-                  2.0f, "%.2f");
+                  3.0f, "%.2f");
         sliderRow(app, "shading.shininess", doc->settings.shininess, 1.0f,
-                  256.0f, "%.0f");
-        sliderRow(app, "shading.rim", doc->settings.rim, 0.0f, 2.0f, "%.2f");
+                  512.0f, "%.0f");
+        sliderRow(app, "shading.rim", doc->settings.rim, 0.0f, 3.0f, "%.2f");
     }
 
     if (ImGui::CollapsingHeader(
@@ -362,19 +362,21 @@ void drawSurfaceSection(app::App& app) {
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.depth_surface").c_str());
-    sliderRow(app, "surface.height", doc->settings.height, 0.01f, 2.0f,
+    sliderRow(app, "surface.height", doc->settings.height, 0.01f, 3.0f,
               "%.2f");
     sliderRow(app, "surface.normal_strength", doc->settings.normalStrength,
-              0.1f, 3.0f, "%.2f");
-    sliderRow(app, "surface.smooth", doc->settings.smooth, 0.0f, 4.0f,
+              0.1f, 4.0f, "%.2f");
+    sliderRow(app, "surface.smooth", doc->settings.smooth, 0.0f, 6.0f,
               "%.1f");
+    sliderRow(app, "surface.detail", doc->settings.detail, 0.0f, 1.0f,
+              "%.2f");
     checkboxRow(app, "surface.line_assist", doc->settings.lineAssist);
     checkboxRow(app, "surface.invert", doc->settings.invert);
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.composite").c_str());
     sliderRow(app, "surface.mix", doc->settings.mix, 0.0f, 1.0f, "%.2f");
-    sliderRow(app, "surface.exposure", doc->settings.exposure, -3.0f, 3.0f,
+    sliderRow(app, "surface.exposure", doc->settings.exposure, -5.0f, 5.0f,
               "%.2f");
 
     ImGui::Spacing();

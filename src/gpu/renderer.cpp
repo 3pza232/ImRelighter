@@ -396,6 +396,7 @@ void Renderer::passNormal(const core::Document& doc) {
         "uPixelScale",
         static_cast<float>(doc.width) / static_cast<float>(preview_.width));
     normalShader_.setFloat("uMaxTilt", 1.5f);
+    normalShader_.setFloat("uDetailStrength", doc.settings.detail);
     normalShader_.setFloat("uAmplitude",
                            std::max(doc.settings.height, 0.001f));
     normalShader_.setFloat("uNormalStrength", doc.settings.normalStrength);

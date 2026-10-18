@@ -43,6 +43,18 @@ bool iconButton(const char* id, const char* glyph, const ImVec2& size) {
     return clicked;
 }
 
+bool centeredButton(const char* label, const ImVec2& size) {
+    ImGuiStyle& style = ImGui::GetStyle();
+    const float paddingY =
+        std::max(style.FramePadding.y,
+                 (size.y - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(style.FramePadding.x, paddingY));
+    const bool clicked = ImGui::Button(label, size);
+    ImGui::PopStyleVar();
+    return clicked;
+}
+
 bool closeButton(const char* id, const ImVec2& size) {
     const bool clicked = ImGui::InvisibleButton(id, size);
     const ImVec2 min = ImGui::GetItemRectMin();
@@ -56,11 +68,16 @@ bool closeButton(const char* id, const ImVec2& size) {
                                                    : theme::danger),
                         7.0f);
 
-    const char* glyph = "×";
-    const ImVec2 textSize = ImGui::CalcTextSize(glyph);
-    const ImVec2 textPos(min.x + (size.x - textSize.x) * 0.5f,
-                         min.y + (size.y - textSize.y) * 0.5f);
-    draw->AddText(textPos, theme::u32(theme::closeText), glyph);
+    // Draw the cross from the exact center instead of relying on the glyph
+    // bounding box, which sits slightly high inside tall buttons.
+    const ImVec2 center((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+    const float arm = std::min(size.x, size.y) * 0.22f;
+    const float thickness = std::max(1.0f, ImGui::GetFontSize() * 0.09f);
+    const ImU32 color = theme::u32(theme::closeText);
+    draw->AddLine(ImVec2(center.x - arm, center.y - arm),
+                  ImVec2(center.x + arm, center.y + arm), color, thickness);
+    draw->AddLine(ImVec2(center.x - arm, center.y + arm),
+                  ImVec2(center.x + arm, center.y - arm), color, thickness);
     return clicked;
 }
 

@@ -11,10 +11,17 @@ uniform float uPixelScale;
 uniform float uAmplitude;
 uniform float uNormalStrength;
 uniform float uMaxTilt;
+uniform float uDetailStrength;
 uniform vec3 uFlips;
 
 float heightAt(vec2 uv) {
     return texture(uHeight, uv).r * uAmplitude;
+}
+
+float colorLuma(vec2 uv) {
+    // uColor is stored top-down while vUv addresses the flipped render target.
+    vec3 color = texture(uColor, vec2(uv.x, 1.0 - uv.y)).rgb;
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
 void main() {
@@ -47,12 +54,24 @@ void main() {
     float scale = max(uPixelScale, 1e-6);
     vec2 slope = vec2(-dx / scale, dy / scale) * uImageSize.y * 0.5;
     slope *= uNormalStrength;
-    // Relative depth has no reliable absolute scale. Limiting the slope keeps
-    // the upsampled depth ramp from turning into a near-horizontal normal and
-    // painting a wide rim highlight around silhouettes.
+
+    // Add high-frequency albedo detail so a low-resolution depth map does not
+    // shade flat surfaces like smooth cardboard.
+    vec2 detailTexel = uTexel * 1.5;
+    vec2 detail = vec2(
+        -(colorLuma(vUv + vec2(detailTexel.x, 0.0)) -
+          colorLuma(vUv - vec2(detailTexel.x, 0.0))),
+        colorLuma(vUv + vec2(0.0, detailTexel.y)) -
+            colorLuma(vUv - vec2(0.0, detailTexel.y)));
+    slope += detail * uDetailStrength * 8.0;
+
+    // Relative depth has no reliable absolute scale. Soft-saturating the slope
+    // keeps the upsampled depth ramp from turning into a near-horizontal normal
+    // without flattening whole regions into a constant plane.
     float slopeLength = length(slope);
-    if (slopeLength > uMaxTilt) {
-        slope *= uMaxTilt / slopeLength;
+    if (slopeLength > 1e-6) {
+        float softLength = uMaxTilt * tanh(slopeLength / uMaxTilt);
+        slope *= softLength / slopeLength;
     }
 
     vec3 n = normalize(vec3(slope, 1.0));

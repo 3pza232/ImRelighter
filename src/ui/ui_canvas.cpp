@@ -64,7 +64,8 @@ void drawEmptyCanvas(app::App& app) {
     const float buttonWidth = ImGui::CalcTextSize(buttonLabel.c_str()).x +
                               ImGui::GetStyle().FramePadding.x * 2.0f + 24.0f;
     ImGui::SetCursorPos(ImVec2((size.x - buttonWidth) * 0.5f, size.y * 0.47f + 152.0f));
-    if (ImGui::Button(buttonLabel.c_str(), ImVec2(buttonWidth, 30.0f))) {
+    if (centeredButton(buttonLabel.c_str(),
+                       ImVec2(buttonWidth, scaled(32.0f)))) {
         app.requestOpenImage();
     }
 }
@@ -138,11 +139,17 @@ void drawImageCanvas(app::App& app) {
                            doc->view == core::View::Shadow;
 
     const auto placeLight = [&](int lightId) {
-        const float u = (io.MousePos.x - topLeft.x) /
-                        std::max(1.0f, static_cast<float>(doc->width) * scale);
-        const float v = (io.MousePos.y - topLeft.y) /
-                        std::max(1.0f, static_cast<float>(doc->height) * scale);
-        if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) return false;
+        // Allow the light to sit outside the image so it can graze the
+        // subject from the side. The range is bounded to keep the marker
+        // reachable after zooming out.
+        const float u = std::clamp(
+            (io.MousePos.x - topLeft.x) /
+                std::max(1.0f, static_cast<float>(doc->width) * scale),
+            -1.0f, 2.0f);
+        const float v = std::clamp(
+            (io.MousePos.y - topLeft.y) /
+                std::max(1.0f, static_cast<float>(doc->height) * scale),
+            -1.0f, 2.0f);
         const float aspect =
             static_cast<float>(doc->width) / static_cast<float>(doc->height);
         for (core::Light& light : doc->lights) {
@@ -369,6 +376,7 @@ void drawCanvas(app::App& app) {
                             std::clamp(doc->zoom / 1.2f, 0.05f, 8.0f);
                     }
                     ImGui::SameLine();
+                    ImGui::AlignTextToFramePadding();
                     ImGui::Text("%.0f%%", doc->zoom * 100.0f);
                     ImGui::SameLine();
                     if (ImGui::Button("+", ImVec2(buttonWidth, 0.0f))) {
@@ -376,8 +384,8 @@ void drawCanvas(app::App& app) {
                             std::clamp(doc->zoom * 1.2f, 0.05f, 8.0f);
                     }
                     ImGui::SameLine();
-                    if (ImGui::Button(app.tr("canvas.fit").c_str(),
-                                      ImVec2(fitWidth, 0.0f))) {
+                    if (centeredButton(app.tr("canvas.fit").c_str(),
+                                       ImVec2(fitWidth, 0.0f))) {
                         doc->zoom = 1.0f;
                         doc->panX = 0.0f;
                         doc->panY = 0.0f;
