@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "ml/model_config.h"
 #include "ml/preprocess.h"
 
 namespace ml {
@@ -107,10 +108,11 @@ void InferenceService::workerLoop() {
         }
 
         if (result.error.empty() && !cancelRequested_.load()) {
+            const ModelConfig modelConfig = loadModelConfig(job.modelPath);
             PreprocessResult preprocessed;
             std::string error;
             if (!preprocess(job.rgba.data(), job.width, job.height, preprocessed,
-                            &error)) {
+                            &error, modelConfig)) {
                 result.error = error;
             } else if (cancelRequested_.load()) {
                 result.cancelled = true;
@@ -128,7 +130,7 @@ void InferenceService::workerLoop() {
                     }
                 } else if (!postprocess(output, outputWidth, outputHeight,
                                         job.width, job.height, result.depth,
-                                        &error)) {
+                                        &error, modelConfig.invertDepth)) {
                     result.error = error;
                 }
             }

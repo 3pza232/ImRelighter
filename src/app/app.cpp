@@ -788,7 +788,13 @@ bool App::directmlAvailable() const {
 }
 
 std::uintmax_t App::modelSize() const {
-    return paths::fileSize(modelPath());
+    const auto path = modelPath();
+    if (path.empty()) return 0;
+    std::uintmax_t size = paths::fileSize(path);
+    auto external = path;
+    external += L"_data";
+    size += paths::fileSize(external);
+    return size;
 }
 
 std::string App::modelSha() const {

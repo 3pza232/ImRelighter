@@ -9,6 +9,7 @@
 #include "core/i18n.h"
 #include "io/image_io.h"
 #include "io/png_export.h"
+#include "ml/model_config.h"
 #include "ml/preprocess.h"
 #include "nlohmann/json.hpp"
 
@@ -32,6 +33,22 @@ void check(bool condition, const char* message) {
 
 bool near(float a, float b, float epsilon = 1e-4f) {
     return std::abs(a - b) <= epsilon;
+}
+
+void testModelConfig() {
+    const ml::ModelConfig config = ml::loadModelConfig(IMRELIGHTER_MODEL_MANIFEST);
+    check(config.loaded, "model manifest config loads");
+    check(config.inputSize == 518 && config.sizeMultiple == 14,
+          "V2 manifest preprocessing values");
+    check(std::abs(config.mean[0] - 0.485f) < 1e-5f &&
+              std::abs(config.stddev[0] - 0.229f) < 1e-5f,
+          "V2 manifest normalization values");
+    const ml::ModelConfig processor =
+        ml::loadModelConfig(IMRELIGHTER_PREPROCESSOR_CONFIG);
+    check(processor.loaded && processor.inputSize == 518 &&
+              processor.sizeMultiple == 14 && processor.rescale &&
+              processor.normalize,
+          "preprocessor_config values load");
 }
 
 void testPreprocessShape() {
@@ -216,6 +233,7 @@ void testDepthPngHeader() {
 } // namespace
 
 int main() {
+    testModelConfig();
     testWebp();
     testI18nParity();
     testPreprocessShape();

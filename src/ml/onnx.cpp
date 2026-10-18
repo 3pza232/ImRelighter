@@ -2,8 +2,9 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
-#include <limits>
 
 #ifndef _Frees_ptr_opt_
 #define _Frees_ptr_opt_
@@ -80,15 +81,18 @@ float halfToFloat(uint16_t value) {
     return result;
 }
 
-bool readTypeInfo(const OrtApi* api, OrtSession* session, bool input,
-                  ModelInfo& info, std::string* error) {
+bool readTensorInfo(const OrtApi* api, OrtSession* session, bool input,
+                    size_t index, std::string& typeName,
+                    std::vector<int64_t>& shape, std::string* error) {
     OrtTypeInfo* typeInfo = nullptr;
-    OrtStatus* status = input ? api->SessionGetInputTypeInfo(session, 0, &typeInfo)
-                              : api->SessionGetOutputTypeInfo(session, 0, &typeInfo);
+    OrtStatus* status =
+        input ? api->SessionGetInputTypeInfo(session, index, &typeInfo)
+              : api->SessionGetOutputTypeInfo(session, index, &typeInfo);
     if (status) {
         if (error) *error = statusText(api, status);
         return false;
     }
+
     const OrtTensorTypeAndShapeInfo* shapeInfo = nullptr;
     status = api->CastTypeInfoToTensorInfo(typeInfo, &shapeInfo);
     if (status || !shapeInfo) {
@@ -115,23 +119,16 @@ bool readTypeInfo(const OrtApi* api, OrtSession* session, bool input,
         api->ReleaseTypeInfo(typeInfo);
         return false;
     }
-    std::vector<int64_t> dimensions(rank);
+    shape.assign(rank, 0);
     if (rank > 0) {
-        status = api->GetDimensions(shapeInfo, dimensions.data(), rank);
+        status = api->GetDimensions(shapeInfo, shape.data(), rank);
         if (status) {
             if (error) *error = statusText(api, status);
             api->ReleaseTypeInfo(typeInfo);
             return false;
         }
     }
-
-    if (input) {
-        info.inputType = elementTypeName(type);
-        info.inputShape = std::move(dimensions);
-    } else {
-        info.outputType = elementTypeName(type);
-        info.outputShape = std::move(dimensions);
-    }
+    typeName = elementTypeName(type);
     api->ReleaseTypeInfo(typeInfo);
     return true;
 }
@@ -185,12 +182,12 @@ bool OnnxRuntime::load(const std::filesystem::path& dllPath, std::string* error)
     return true;
 }
 
-OnnxSession::~OnnxSession() {
-    release();
-}
-
 OrtStatus* OnnxRuntime::appendDml(OrtSessionOptions* options) const {
     return dmlAppend_ ? dmlAppend_(options, 0) : nullptr;
+}
+
+OnnxSession::~OnnxSession() {
+    release();
 }
 
 void OnnxSession::release() {
@@ -285,13 +282,12 @@ bool OnnxSession::load(const OnnxRuntime& runtime,
     size_t outputCount = 0;
     status = api_->SessionGetInputCount(session_, &inputCount);
     if (!status) status = api_->SessionGetOutputCount(session_, &outputCount);
-    if (status) {
-        if (error) *error = statusText(api_, status);
-        release();
-        return false;
-    }
-    if (inputCount != 1 || outputCount != 1) {
-        if (error) *error = "Depth model must have one input and one output.";
+    if (status || inputCount != 1 || outputCount != 1) {
+        if (status) {
+            if (error) *error = statusText(api_, status);
+        } else if (error) {
+            *error = "Depth model must have one input and one output.";
+        }
         release();
         return false;
     }
@@ -318,8 +314,10 @@ bool OnnxSession::load(const OnnxRuntime& runtime,
     freeStatus = api_->AllocatorFree(allocator, name);
     if (freeStatus) api_->ReleaseStatus(freeStatus);
 
-    if (!readTypeInfo(api_, session_, true, info_, error) ||
-        !readTypeInfo(api_, session_, false, info_, error)) {
+    if (!readTensorInfo(api_, session_, true, 0, info_.inputType,
+                        info_.inputShape, error) ||
+        !readTensorInfo(api_, session_, false, 0, info_.outputType,
+                        info_.outputShape, error)) {
         release();
         return false;
     }
@@ -353,7 +351,6 @@ bool OnnxSession::load(const OnnxRuntime& runtime,
         return false;
     }
     runOptions_.store(runOptions);
-
     return true;
 }
 
@@ -378,6 +375,10 @@ bool OnnxSession::run(const std::vector<float>& input, int height, int width,
                       int& outputWidth, std::string* error) {
     if (!api_ || !session_ || !memoryInfo_) {
         if (error) *error = "ONNX session is not loaded.";
+        return false;
+    }
+    if (input.size() != static_cast<size_t>(height) * width * 3) {
+        if (error) *error = "Input tensor shape does not match the image.";
         return false;
     }
 
@@ -441,21 +442,16 @@ bool OnnxSession::run(const std::vector<float>& input, int height, int width,
         api_->ReleaseValue(outputValue);
         return false;
     }
-    if (dimensions < 2) {
-        api_->ReleaseTensorTypeAndShapeInfo(info);
-        api_->ReleaseValue(outputValue);
-        if (error) *error = "Unexpected depth output shape.";
-        return false;
-    }
 
     ONNXTensorElementDataType elementType = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
     status = api_->GetTensorElementType(info, &elementType);
-    if (status || (elementType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT &&
-                   elementType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16)) {
+    if (status || dimensions < 2 ||
+        (elementType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT &&
+         elementType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16)) {
         if (status) {
             if (error) *error = statusText(api_, status);
         } else if (error) {
-            *error = "Depth output must be float32 or float16.";
+            *error = "Depth output must be a float32 or float16 tensor.";
         }
         api_->ReleaseTensorTypeAndShapeInfo(info);
         api_->ReleaseValue(outputValue);
@@ -477,6 +473,7 @@ bool OnnxSession::run(const std::vector<float>& input, int height, int width,
         api_->ReleaseValue(outputValue);
         return false;
     }
+
     void* data = nullptr;
     status = api_->GetTensorMutableData(outputValue, &data);
     api_->ReleaseTensorTypeAndShapeInfo(info);

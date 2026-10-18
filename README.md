@@ -9,8 +9,9 @@ Windows 本地的单图重打光工具：本地深度估计、OpenGL 实时光�
 - 设置面板已可用：语言（中/英）、主题、推理后端（Auto / CPU / DirectML）、模型文件选择、关于/许可证。
 - **PNG / JPEG / WebP 图片加载、缩略图任务栏、多任务切换/关闭、滚轮缩放、中键平移、光源拖动** 已接入。
 - **OpenGL 4.5 渲染管线**：深度平滑、法线、8 灯阴影 MRT、模糊、最终光照、7 视图、对比线。
-- **本地 ONNX 深度推理**：ONNX Runtime C API、动态加载、CPU / DirectML、FP32/FP16、预处理/后处理、后台线程。
+- **本地 ONNX 深度推理**：ONNX Runtime C API、动态加载、CPU / DirectML、FP32/FP16、单输入/单输出深度模型、预处理/后处理、后台线程。
 - 模型、`assets/`（含 `assets/shaders/`）、ONNX Runtime、DirectML、libwebp 会在构建时复制到产物目录。
+- 模型支持同目录/上一级 `preprocessor_config.json` 或 `manifest.json` 读取输入尺寸与归一化参数。
 - **PNG 导出**：光照、法线、仅光照、阴影 RGBA8；深度 16 位灰度 PNG；全分辨率渲染回读。
 - **自动环绕、12 任务 / 2 GB 资源上限、GPU 金图像回归、DirectML、异步导出** 已接入。
 

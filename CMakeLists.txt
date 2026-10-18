@@ -70,6 +70,7 @@ add_executable(ImRelighter WIN32
     src/gpu/renderer.cpp
     src/ml/onnx.cpp
     src/ml/model_metadata.cpp
+    src/ml/model_config.cpp
     src/ml/preprocess.cpp
     src/ml/stb_resize_impl.cpp
     src/ml/inference.cpp
@@ -127,16 +128,20 @@ if(BUILD_TESTING)
     add_executable(imrelighter_tests
         tests/core_tests.cpp
         src/ml/preprocess.cpp
+        src/ml/model_config.cpp
         src/ml/stb_resize_impl.cpp)
     target_include_directories(imrelighter_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
-        "${EXTERN_DIR}/stb")
+        "${EXTERN_DIR}/stb"
+        "${EXTERN_DIR}/json")
     target_link_libraries(imrelighter_tests PRIVATE imrelighter_core)
     set_target_properties(imrelighter_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
     target_compile_definitions(imrelighter_tests PRIVATE
         "IMRELIGHTER_I18N_DIR=\"${CMAKE_SOURCE_DIR}/assets/i18n\""
-        "IMRELIGHTER_TEST_WEBP=\"${CMAKE_SOURCE_DIR}/tests/data/test.webp\"")
+        "IMRELIGHTER_TEST_WEBP=\"${CMAKE_SOURCE_DIR}/tests/data/test.webp\""
+        "IMRELIGHTER_MODEL_MANIFEST=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/manifest.json\""
+        "IMRELIGHTER_PREPROCESSOR_CONFIG=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/preprocessor_config.json\"")
     add_custom_command(TARGET imrelighter_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${EXTERN_DIR}/libwebp/libwebp.dll"
@@ -166,10 +171,12 @@ if(BUILD_TESTING)
         tests/inference_bench.cpp
         src/ml/onnx.cpp
         src/ml/preprocess.cpp
+        src/ml/model_config.cpp
         src/ml/stb_resize_impl.cpp)
     target_include_directories(imrelighter_inference_bench PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
         "${EXTERN_DIR}/stb"
+        "${EXTERN_DIR}/json"
         "${EXTERN_DIR}/onnxruntime/include")
     target_compile_definitions(imrelighter_inference_bench PRIVATE
         "IMRELIGHTER_MODEL_PATH=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/model.onnx\""
@@ -238,3 +245,10 @@ add_custom_command(TARGET ImRelighter POST_BUILD
             "${EXTERN_DIR}/libwebp/PATENTS"
             "$<TARGET_FILE_DIR:ImRelighter>/PATENTS-LIBWEBP.txt"
     COMMENT "Copying assets, model and runtime DLLs")
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/preprocessor_config.json")
+    add_custom_command(TARGET ImRelighter POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/preprocessor_config.json"
+                "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/preprocessor_config.json")
+endif()

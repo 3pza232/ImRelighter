@@ -10,21 +10,24 @@
 namespace ml {
 namespace {
 
-int roundTo14(float value) {
-    const int steps = static_cast<int>(std::nearbyint(value / 14.0f));
-    return std::max(14, steps * 14);
+int roundToMultiple(float value, int multiple) {
+    const int unit = std::max(1, multiple);
+    const int steps = static_cast<int>(std::nearbyint(value / unit));
+    return std::max(unit, steps * unit);
 }
 
 } // namespace
 
 bool preprocess(const uint8_t* rgba, int width, int height,
-                PreprocessResult& result, std::string* error) {
-    if (!rgba || width <= 0 || height <= 0) {
-        if (error) *error = "Invalid image for preprocessing.";
+                PreprocessResult& result, std::string* error,
+                const ModelConfig& config) {
+    if (!rgba || width <= 0 || height <= 0 ||
+        config.inputSize <= 0 || config.sizeMultiple <= 0) {
+        if (error) *error = "Invalid image or model preprocessing configuration.";
         return false;
     }
 
-    constexpr float target = 518.0f;
+    const float target = static_cast<float>(config.inputSize);
     float scaleWidth = target / static_cast<float>(width);
     float scaleHeight = target / static_cast<float>(height);
     if (std::abs(1.0f - scaleWidth) < std::abs(1.0f - scaleHeight)) {
@@ -33,8 +36,10 @@ bool preprocess(const uint8_t* rgba, int width, int height,
         scaleWidth = scaleHeight;
     }
 
-    const int newWidth = roundTo14(scaleWidth * static_cast<float>(width));
-    const int newHeight = roundTo14(scaleHeight * static_cast<float>(height));
+    const int newWidth =
+        roundToMultiple(scaleWidth * static_cast<float>(width), config.sizeMultiple);
+    const int newHeight =
+        roundToMultiple(scaleHeight * static_cast<float>(height), config.sizeMultiple);
 
     std::vector<uint8_t> resized(static_cast<size_t>(newWidth) * newHeight * 4);
     if (!stbir_resize_uint8_linear(rgba, width, height, 0, resized.data(),
@@ -48,15 +53,15 @@ bool preprocess(const uint8_t* rgba, int width, int height,
     const size_t plane = static_cast<size_t>(newWidth) * newHeight;
     result.tensor.resize(plane * 3);
 
-    constexpr float mean[3] = {0.485f, 0.456f, 0.406f};
-    constexpr float stddev[3] = {0.229f, 0.224f, 0.225f};
+    const float* mean = config.mean;
+    const float* stddev = config.stddev;
     for (int channel = 0; channel < 3; ++channel) {
         for (size_t i = 0; i < plane; ++i) {
-            const float value =
-                static_cast<float>(resized[i * 4 + static_cast<size_t>(channel)]) /
-                255.0f;
-            result.tensor[static_cast<size_t>(channel) * plane + i] =
-                (value - mean[channel]) / stddev[channel];
+            float value =
+                static_cast<float>(resized[i * 4 + static_cast<size_t>(channel)]);
+            if (config.rescale) value /= 255.0f;
+            if (config.normalize) value = (value - mean[channel]) / stddev[channel];
+            result.tensor[static_cast<size_t>(channel) * plane + i] = value;
         }
     }
     return true;
@@ -64,7 +69,8 @@ bool preprocess(const uint8_t* rgba, int width, int height,
 
 bool postprocess(const std::vector<float>& raw, int rawWidth, int rawHeight,
                  int targetWidth, int targetHeight,
-                 std::vector<float>& depth, std::string* error) {
+                 std::vector<float>& depth, std::string* error,
+                 bool invertDepth) {
     if (raw.empty() || rawWidth <= 0 || rawHeight <= 0 || targetWidth <= 0 ||
         targetHeight <= 0) {
         if (error) *error = "Invalid depth tensor.";
@@ -96,6 +102,10 @@ bool postprocess(const std::vector<float>& raw, int rawWidth, int rawHeight,
         for (float& value : resized) {
             value = std::clamp((value - minimum) / span, 0.0f, 1.0f);
         }
+    }
+
+    if (invertDepth) {
+        for (float& value : resized) value = 1.0f - value;
     }
 
     const size_t rowWidth = static_cast<size_t>(targetWidth);
