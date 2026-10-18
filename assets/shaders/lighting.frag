@@ -25,6 +25,8 @@ uniform int uViewMode;
 uniform int uSelectedLight;
 uniform int uLightCount;
 uniform int uShadowsEnabled;
+uniform int uLightingModel;
+uniform int uToneMap;
 
 uniform vec3 uLightPos[8];
 uniform vec3 uLightColor[8];
@@ -45,7 +47,7 @@ vec3 encode(vec3 color) {
                step(vec3(0.0031308), color));
 }
 
-vec3 tonemap(vec3 color) {
+vec3 softTonemap(vec3 color) {
     // Preserve the normal exposure range and roll off only highlights, so
     // individual channels do not clip at different points and shift hue.
     const vec3 knee = vec3(0.8);
@@ -53,6 +55,48 @@ vec3 tonemap(vec3 color) {
     vec3 over = max(color - knee, vec3(0.0));
     return min(color, knee) +
            (vec3(1.0) - knee) * (vec3(1.0) - exp(-over / (vec3(1.0) - knee)));
+}
+
+vec3 acesTonemap(vec3 color) {
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    color = max(color, vec3(0.0));
+    return clamp((color * (a * color + b)) /
+                     (color * (c * color + d) + e),
+                 0.0, 1.0);
+}
+
+vec3 tonemap(vec3 color) {
+    return uToneMap == 1 ? acesTonemap(color) : softTonemap(color);
+}
+
+float distributionGGX(float ndh, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denom = ndh * ndh * (a2 - 1.0) + 1.0;
+    return a2 / max(3.14159265 * denom * denom, 1e-5);
+}
+
+float geometrySchlickGGX(float ndx, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return ndx / max(ndx * (1.0 - k) + k, 1e-5);
+}
+
+float geometrySmith(float ndv, float ndl, float roughness) {
+    return geometrySchlickGGX(ndv, roughness) *
+           geometrySchlickGGX(ndl, roughness);
+}
+
+vec3 fresnelSchlick(float cosTheta, vec3 f0) {
+    return f0 + (vec3(1.0) - f0) * pow(1.0 - cosTheta, 5.0);
+}
+
+float ditherNoise(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
 float sourceLuma(vec2 uv) {
@@ -69,9 +113,34 @@ void main() {
     vec3 base = linearize(source.rgb);
     float height = texture(uHeight, vUv).r;
     // The normal pass writes an FBO stored bottom-up; flip V only here.
-    vec4 normalSample = texture(uNormal, vec2(vUv.x, 1.0 - vUv.y));
+    vec2 normalUv = vec2(vUv.x, 1.0 - vUv.y);
+    vec4 normalSample = texture(uNormal, normalUv);
     vec3 n = normalize(normalSample.rgb * 2.0 - 1.0);
     float edgeMask = clamp(normalSample.a, 0.0, 1.0);
+
+    // Surface detail is intentionally high-frequency. Using it directly for the
+    // specular lobe turns single pixels into white fireflies, so average the
+    // normal over a 2x2 footprint for shading while keeping the detailed normal
+    // for diffuse and rim light.
+    vec2 normalTexel = 1.0 / vec2(textureSize(uNormal, 0));
+    vec3 specularNormal =
+        texture(uNormal, normalUv + vec2(-0.5, -0.5) * normalTexel).rgb *
+            2.0 -
+        1.0;
+    specularNormal +=
+        texture(uNormal, normalUv + vec2(0.5, -0.5) * normalTexel).rgb * 2.0 -
+        1.0;
+    specularNormal +=
+        texture(uNormal, normalUv + vec2(-0.5, 0.5) * normalTexel).rgb * 2.0 -
+        1.0;
+    specularNormal +=
+        texture(uNormal, normalUv + vec2(0.5, 0.5) * normalTexel).rgb * 2.0 -
+        1.0;
+    if (dot(specularNormal, specularNormal) < 1e-6) {
+        specularNormal = n;
+    } else {
+        specularNormal = normalize(specularNormal);
+    }
 
     // Local luminance contrast separates woven/cloth/hair micro-structure from
     // broad illumination. Textured regions get a dimmer, less mirror-like
@@ -129,19 +198,55 @@ void main() {
 
         float vis = uShadowsEnabled != 0 ? visibility[i] : 1.0;
         vec3 radiance = uLightColor[i] * uLightIntensity[i] * attenuation;
-        direct += radiance * diffuse * vis;
 
-        vec3 halfVector = normalize(l + vec3(0.0, 0.0, 1.0));
-        float shininess = mix(uShininess, max(8.0, uShininess * 0.5), roughness);
-        float specular = uSpecular * mix(1.0, 0.35, roughness);
-        float shine = pow(max(dot(n, halfVector), 0.0), max(shininess, 1.0)) *
-                      specular * smoothstep(0.0, 0.15, ndl);
-        float rim = pow(1.0 - max(n.z, 0.0), 3.0) * max(ndl, 0.0) * uRim;
+        vec3 viewDir = vec3(0.0, 0.0, 1.0);
+        vec3 halfVector = normalize(l + viewDir);
+        float ndlPositive = max(ndl, 0.0);
+        float rim = pow(1.0 - max(n.z, 0.0), 3.0) * ndlPositive * uRim;
+        if (uLightingModel == 0) {
+            float shininess =
+                mix(uShininess, max(8.0, uShininess * 0.5), roughness);
+            float specular = uSpecular * mix(1.0, 0.35, roughness);
+            float shine =
+                pow(max(dot(specularNormal, halfVector), 0.0),
+                    max(shininess, 1.0)) *
+                specular *
+                smoothstep(0.0, 0.15, dot(specularNormal, l));
+            shine *= 1.0 - 0.6 * edgeMask;
+            direct += radiance * diffuse * vis;
+            highlights += radiance * shine * vis;
+        } else {
+            // A GGX lobe with Fresnel and Smith visibility replaces the broad
+            // Blinn-Phong sheen that made fabric and hair look like leather.
+            // A roughness floor keeps 1-pixel normal-map detail from turning
+            // into mirror-like fireflies on fabric and hair. The UI shininess
+            // still controls how broad the highlight is above that floor.
+            float baseRoughness =
+                clamp(sqrt(2.0 / max(uShininess + 2.0, 1.0)), 0.30, 1.0);
+            float rough = clamp(
+                mix(baseRoughness, min(baseRoughness + 0.4, 1.0), roughness),
+                0.30, 1.0);
+            float ndv = max(dot(specularNormal, viewDir), 0.001);
+            float ndh = max(dot(specularNormal, halfVector), 0.0);
+            float vdh = max(dot(viewDir, halfVector), 0.0);
+            float ndlSafe = max(dot(specularNormal, l), 0.001);
+            float D = distributionGGX(ndh, rough);
+            float G = geometrySmith(ndv, ndlSafe, rough);
+            vec3 F = fresnelSchlick(vdh, vec3(0.04));
+            // A tiny denominator turns grazing micro-normals into isolated
+            // white fireflies. Clamp the geometric term and the final specular
+            // so a single normal-map texel cannot dominate the frame.
+            vec3 specularTerm =
+                (D * G * F) / max(4.0 * ndv * ndlSafe, 0.05);
+            specularTerm = min(specularTerm, vec3(1.0));
+            specularTerm *= (1.0 - 0.6 * edgeMask);
+            direct += radiance * diffuse * vis * (vec3(1.0) - F);
+            highlights += radiance * specularTerm * uSpecular * vis;
+        }
         // Depth discontinuities are not real surface curvature. Fade the
         // additive highlights there to avoid colored halos on silhouettes.
-        shine *= 1.0 - 0.6 * edgeMask;
         rim *= 1.0 - edgeMask;
-        highlights += radiance * (shine + rim) * vis;
+        highlights += radiance * rim * vis;
     }
 
     vec3 ambientLight = uAmbientColor * uAmbient;
@@ -175,6 +280,9 @@ void main() {
     } else {
         float mixed = uViewMode == 2 ? 1.0 : uMix;
         outputColor = mix(base, outputColor, mixed);
-        outColor = vec4(clamp(encode(outputColor), 0.0, 1.0), source.a);
+        float dither =
+            (ditherNoise(gl_FragCoord.xy) - 0.5) / 255.0;
+        outColor = vec4(clamp(encode(outputColor) + vec3(dither), 0.0, 1.0),
+                        source.a);
     }
 }

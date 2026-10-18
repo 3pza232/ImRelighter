@@ -12,14 +12,14 @@ ImRelighter 是 Windows 本地单图重打光工具：读取 PNG/JPEG/WebP，估
 | `src/core` | 文档、设置、数据类型、配置、i18n |
 | `src/io` | 图片解码、WebP、PNG 导出、路径、原生对话框 |
 | `src/ml` | ONNX Runtime 动态加载、预处理/后处理、推理线程 |
-| `src/gpu` | OpenGL 纹理/FBO、深度、法线、阴影、光照 Pass |
+| `src/gpu` | OpenGL 纹理/FBO、深度、法线、阴影、物理/经典光照 Pass |
 | `src/ui` | ImGui 布局、画布、右栏、设置、导出菜单 |
 
 ## 数据流
 
 1. 图片解码为 top-down RGBA8。
 2. 深度模型输出经 resize、归一化，再翻成 `bottom-up` 的 `Document::depth`，与 GL 上传和中间 FBO 的方向约定一致。
-3. 深度 Pass → 高度纹理；法线 Pass → 法线 FBO；阴影/模糊 Pass → 可见性；光照 Pass → 预览/导出。
+3. 深度 Pass → 高度纹理；法线 Pass → 法线 FBO；阴影/模糊 Pass → 可见性；光照 Pass（物理/经典 + 柔和/ACES）→ 预览/导出。
 4. 深度导出 PNG 时再翻回 top-down。
 
 ## 关键约束

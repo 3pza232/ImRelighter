@@ -127,12 +127,12 @@ Document::depth (bottom-up)
   → Normal Pass       → 法线
   → Shadow Pass ×8    → MRT 可见性
   → Blur Pass         → 柔化阴影
-  → Lighting Pass     → 预览或导出 FBO
+  → Lighting Pass     → 物理/经典光照 + 柔和/ACES 色调映射 → 预览或导出 FBO
 ```
 
-`Renderer::renderPreview()` 用 `renderStateHash(doc)` 判断参数是否变化；哈希必须覆盖所有会影响画面的输入。新增渲染参数时，要同时更新 Pass 中的 uniform 和哈希。
+`Renderer::renderPreview()` 用 `renderStateHash(doc)` 判断参数是否变化；哈希必须覆盖所有会影响画面的输入，包括光照模型、色调映射、表面细节与灯光。新增渲染参数时，要同时更新 Pass 中的 uniform 和哈希。
 
-预览使用受限分辨率，导出时按原图尺寸重新渲染并回读。
+颜色纹理在 CPU 上传后生成 mipmap；Normal Pass 的表面细节按渲染分辨率选择亮度 LOD，避免单像素噪声变成法线尖峰。预览使用受限分辨率，导出时按原图尺寸重新渲染并回读。
 
 ### 导出
 

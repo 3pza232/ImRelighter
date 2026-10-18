@@ -23,7 +23,10 @@ float heightAt(ivec2 pixel) {
 float colorLuma(vec2 uv) {
     // The height target is already top-down, matching the color texture. Do not
     // flip V here or detail gradients come from a vertically mirrored image.
-    vec3 color = texture(uColor, uv).rgb;
+    // Sample at least one mip level so single-pixel JPEG grain cannot become a
+    // normal spike that sparkles under specular light.
+    float lod = clamp(log2(max(uPixelScale, 2.0)), 1.0, 2.5);
+    vec3 color = textureLod(uColor, uv, lod).rgb;
     return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 

@@ -13,6 +13,8 @@ enum class Language { ZhCN, EnUS };
 enum class Backend { Auto, Cpu, Dml };
 enum class Theme { Dark, Light };
 enum class ExportKind { Lit, Normal, Depth, Lighting, Shadow };
+enum class LightingModel { Classic, Physical };
+enum class ToneMap { Soft, Aces };
 
 struct Light {
     int id = 1;
@@ -28,6 +30,8 @@ struct Settings {
     float comparison = 0.5f;
 
     bool baseMode = false;
+    LightingModel lightingModel = LightingModel::Physical;
+    ToneMap toneMap = ToneMap::Soft;
     float mix = 1.0f;
 
     float ambient = 0.40f;
@@ -38,9 +42,9 @@ struct Settings {
     float bias = 0.007f;
     float softness = 0.035f;
 
-    float specular = 0.10f;
+    float specular = 0.04f;
     float shininess = 60.0f;
-    float rim = 0.15f;
+    float rim = 0.06f;
 
     float exposure = 0.0f;
     float height = 0.65f;

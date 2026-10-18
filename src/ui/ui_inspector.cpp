@@ -83,6 +83,56 @@ bool colorRow(app::App& app, const char* labelKey, std::string& color) {
     return changed;
 }
 
+void applyRenderPreset(app::App& app, int preset) {
+    core::Document* doc = app.activeDocument();
+    if (!doc) return;
+    core::Settings& settings = doc->settings;
+    settings.lightingModel = core::LightingModel::Physical;
+    settings.toneMap = core::ToneMap::Soft;
+    settings.ambient = 0.40f;
+    settings.ambientColor = "#c0c4cc";
+    settings.specular = 0.04f;
+    settings.shininess = 60.0f;
+    settings.rim = 0.06f;
+    settings.detail = 0.15f;
+    settings.wrap = 0.20f;
+    settings.exposure = 0.0f;
+    settings.bias = 0.007f;
+    settings.softness = 0.035f;
+
+    if (preset == 1) {
+        settings.ambient = 0.50f;
+        settings.ambientColor = "#c8ccd4";
+        settings.specular = 0.03f;
+        settings.shininess = 40.0f;
+        settings.rim = 0.04f;
+        settings.detail = 0.18f;
+        settings.wrap = 0.30f;
+        settings.softness = 0.05f;
+        settings.exposure = 0.10f;
+    } else if (preset == 2) {
+        settings.toneMap = core::ToneMap::Aces;
+        settings.ambient = 0.30f;
+        settings.ambientColor = "#b8c0cc";
+        settings.specular = 0.08f;
+        settings.shininess = 90.0f;
+        settings.rim = 0.10f;
+        settings.detail = 0.12f;
+        settings.wrap = 0.15f;
+        settings.exposure = 0.20f;
+    } else if (preset == 3) {
+        settings.lightingModel = core::LightingModel::Classic;
+        settings.ambient = 0.42f;
+        settings.ambientColor = "#b4bddc";
+        settings.specular = 0.08f;
+        settings.shininess = 60.0f;
+        settings.rim = 0.10f;
+        settings.detail = 0.15f;
+        settings.wrap = 0.20f;
+        settings.exposure = 0.0f;
+    }
+}
+
 } // namespace
 
 void drawImageSection(app::App& app) {
@@ -360,6 +410,60 @@ void drawSurfaceSection(app::App& app) {
     core::Document* doc = app.activeDocument();
     if (!doc) doc = &fallback;
 
+    ImGui::SeparatorText(app.tr("surface.render_preset").c_str());
+    // "电影" and "经典" also appear in the tone-map and lighting-model rows;
+    // scope each group so the shared labels get distinct ImGui IDs.
+    ImGui::PushID("render_preset");
+    const float presetGap = scaled(4.0f);
+    const float presetWidth =
+        (ImGui::GetContentRegionAvail().x - 3.0f * presetGap) / 4.0f;
+    const char* presetKeys[] = {"preset.natural", "preset.portrait",
+                                "preset.cinema", "preset.classic"};
+    for (int i = 0; i < 4; ++i) {
+        if (i > 0) ImGui::SameLine(0.0f, presetGap);
+        if (segmentButton(app.tr(presetKeys[i]).c_str(), false,
+                          ImVec2(presetWidth, 0.0f))) {
+            applyRenderPreset(app, i);
+        }
+    }
+    ImGui::PopID();
+
+    ImGui::Spacing();
+    ImGui::TextUnformatted(app.tr("surface.lighting_model").c_str());
+    ImGui::PushID("lighting_model");
+    const float modelWidth =
+        (ImGui::GetContentRegionAvail().x - presetGap) / 2.0f;
+    if (segmentButton(app.tr("lighting.classic").c_str(),
+                      doc->settings.lightingModel ==
+                          core::LightingModel::Classic,
+                      ImVec2(modelWidth, 0.0f))) {
+        doc->settings.lightingModel = core::LightingModel::Classic;
+    }
+    ImGui::SameLine(0.0f, presetGap);
+    if (segmentButton(app.tr("lighting.physical").c_str(),
+                      doc->settings.lightingModel ==
+                          core::LightingModel::Physical,
+                      ImVec2(modelWidth, 0.0f))) {
+        doc->settings.lightingModel = core::LightingModel::Physical;
+    }
+    ImGui::PopID();
+
+    ImGui::TextUnformatted(app.tr("surface.tone_map").c_str());
+    ImGui::PushID("tone_map");
+    if (segmentButton(app.tr("tone.soft").c_str(),
+                      doc->settings.toneMap == core::ToneMap::Soft,
+                      ImVec2(modelWidth, 0.0f))) {
+        doc->settings.toneMap = core::ToneMap::Soft;
+    }
+    ImGui::SameLine(0.0f, presetGap);
+    if (segmentButton(app.tr("tone.aces").c_str(),
+                      doc->settings.toneMap == core::ToneMap::Aces,
+                      ImVec2(modelWidth, 0.0f))) {
+        doc->settings.toneMap = core::ToneMap::Aces;
+    }
+    ImGui::PopID();
+
+    ImGui::Spacing();
     ImGui::SeparatorText(app.tr("section.base").c_str());
     ImGui::TextUnformatted(app.tr("surface.base_mode").c_str());
     const float baseWidth = ImGui::GetContentRegionAvail().x;
@@ -415,28 +519,56 @@ void drawSurfaceSection(app::App& app) {
 void drawRightPanel(app::App& app) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::panel);
     {
-        Panel panel("##right_panel", ImVec2(scaled(kRightWidth), 0.0f), 0.0f, true);
-        if (panel) {
-            Panel content("##right_scroll", ImVec2(0.0f, 0.0f), 18.0f);
-            if (content) {
-                drawImageSection(app);
-                ImGui::BeginDisabled(!app.hasTask());
-                drawLightSection(app);
-                drawShadingSection(app);
-                drawSurfaceSection(app);
-                ImGui::EndDisabled();
-
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-                ImGui::BeginDisabled(!app.hasTask());
-                if (ImGui::Button(app.tr("panel.reset").c_str(),
-                                  ImVec2(-1.0f, 0.0f))) {
-                    app.resetTask();
-                }
-                ImGui::EndDisabled();
-                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+        // Use a single scrollable child. Nesting a zero-height child inside
+        // another zero-height child makes Dear ImGui auto-fit both windows, which
+        // silently removes the scroll range and hides every section below the
+        // first screenful.
+        const float panelHeight =
+            std::max(1.0f, ImGui::GetContentRegionAvail().y);
+        const float panelWidth = scaled(kRightWidth);
+        Panel content("##right_panel", ImVec2(panelWidth, panelHeight), 18.0f,
+                      true,
+                      ImGuiWindowFlags_AlwaysVerticalScrollbar |
+                          ImGuiWindowFlags_NoScrollWithMouse);
+        if (content) {
+            // Cards are child windows, so ImGui routes the wheel to the hovered
+            // card instead of this panel. Test the panel's real window rect and
+            // scroll it explicitly; the cursor is not always where the layout
+            // cursor was before BeginChild().
+            const ImVec2 panelMin = ImGui::GetWindowPos();
+            const ImVec2 panelSize = ImGui::GetWindowSize();
+            const ImVec2 panelMax(panelMin.x + panelSize.x,
+                                  panelMin.y + panelSize.y);
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            const bool overPanel =
+                !app.ui.settingsOpen && mouse.x >= panelMin.x &&
+                mouse.x < panelMax.x && mouse.y >= panelMin.y &&
+                mouse.y < panelMax.y;
+            const float wheel =
+                overPanel ? ImGui::GetIO().MouseWheel : 0.0f;
+            if (wheel != 0.0f) {
+                const float step =
+                    ImGui::GetTextLineHeightWithSpacing() * 4.0f;
+                ImGui::SetScrollY(ImGui::GetScrollY() - wheel * step);
             }
+
+            drawImageSection(app);
+            ImGui::BeginDisabled(!app.hasTask());
+            drawLightSection(app);
+            drawShadingSection(app);
+            drawSurfaceSection(app);
+            ImGui::EndDisabled();
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::BeginDisabled(!app.hasTask());
+            if (ImGui::Button(app.tr("panel.reset").c_str(),
+                              ImVec2(-1.0f, 0.0f))) {
+                app.resetTask();
+            }
+            ImGui::EndDisabled();
+            ImGui::Dummy(ImVec2(0.0f, 4.0f));
         }
     }
     ImGui::PopStyleColor();

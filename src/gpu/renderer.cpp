@@ -222,7 +222,12 @@ bool Renderer::ensureSource(const core::Document& doc, std::string* error) {
     glBindTexture(GL_TEXTURE_2D, colorTexture_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, doc.width, doc.height, 0, GL_RGBA,
                  GL_UNSIGNED_BYTE, doc.color.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    // The normal pass derives micro-detail from luma. Without mipmaps it turns
+    // single-pixel JPEG grain into sparkling normals, so keep a filtered chain
+    // available for the detail lookup.
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                    GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -507,6 +512,9 @@ void Renderer::passLighting(const core::Document& doc, core::View view) {
     lightingShader_.setInt("uViewMode", static_cast<int>(view));
     lightingShader_.setInt("uSelectedLight", selectedLightIndex(doc));
     lightingShader_.setInt("uShadowsEnabled", doc.settings.shadows ? 1 : 0);
+    lightingShader_.setInt("uLightingModel",
+                           static_cast<int>(doc.settings.lightingModel));
+    lightingShader_.setInt("uToneMap", static_cast<int>(doc.settings.toneMap));
     bindLights(lightingShader_, doc);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }
@@ -577,6 +585,8 @@ std::size_t renderStateHash(const core::Document& doc) {
     addInt(static_cast<int>(doc.view));
     addInt(doc.selectedLight);
     addFloat(doc.settings.comparison);
+    addInt(static_cast<int>(doc.settings.lightingModel));
+    addInt(static_cast<int>(doc.settings.toneMap));
     addFloat(doc.settings.ambient);
     addText(doc.settings.ambientColor);
     addInt(doc.settings.baseMode ? 1 : 0);
