@@ -55,6 +55,10 @@ vec3 tonemap(vec3 color) {
            (vec3(1.0) - knee) * (vec3(1.0) - exp(-over / (vec3(1.0) - knee)));
 }
 
+float sourceLuma(vec2 uv) {
+    return dot(texture(uColor, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
+}
+
 vec3 positionAt(vec2 uv, float height) {
     float aspect = uImageSize.x / max(uImageSize.y, 1.0);
     return vec3((uv * 2.0 - 1.0) * vec2(aspect, -1.0), height);
@@ -68,6 +72,33 @@ void main() {
     vec4 normalSample = texture(uNormal, vec2(vUv.x, 1.0 - vUv.y));
     vec3 n = normalize(normalSample.rgb * 2.0 - 1.0);
     float edgeMask = clamp(normalSample.a, 0.0, 1.0);
+
+    // Local luminance contrast separates woven/cloth/hair micro-structure from
+    // broad illumination. Textured regions get a dimmer, less mirror-like
+    // highlight; flat regions keep the authored specular response.
+    vec2 microStep = 1.5 / vec2(textureSize(uColor, 0));
+    float microL = sourceLuma(vUv - vec2(microStep.x, 0.0));
+    float microR = sourceLuma(vUv + vec2(microStep.x, 0.0));
+    float microB = sourceLuma(vUv - vec2(0.0, microStep.y));
+    float microU = sourceLuma(vUv + vec2(0.0, microStep.y));
+    float microContrast =
+        length(vec2(microR - microL, microU - microB));
+    float roughness = smoothstep(0.02, 0.14, microContrast);
+
+    // A small depth-curvature term darkens creases where the low-resolution
+    // depth map still carries reliable shape, adding contact without a
+    // separate ambient-occlusion pass.
+    vec2 heightStep = 1.0 / vec2(textureSize(uHeight, 0));
+    float heightL = texture(uHeight, vUv - vec2(heightStep.x, 0.0)).r;
+    float heightR = texture(uHeight, vUv + vec2(heightStep.x, 0.0)).r;
+    float heightB = texture(uHeight, vUv - vec2(0.0, heightStep.y)).r;
+    float heightU = texture(uHeight, vUv + vec2(0.0, heightStep.y)).r;
+    float curvature =
+        (heightL + heightR + heightB + heightU - 4.0 * height) /
+        max(uAmplitude, 0.001);
+    float cavity = smoothstep(0.01, 0.06, curvature);
+    float occlusion = 1.0 - 0.35 * cavity * (1.0 - edgeMask);
+
     vec3 p = positionAt(vUv, height * uAmplitude);
 
     vec4 shadow0 = texture(uBlur0, vUv);
@@ -101,8 +132,10 @@ void main() {
         direct += radiance * diffuse * vis;
 
         vec3 halfVector = normalize(l + vec3(0.0, 0.0, 1.0));
-        float shine = pow(max(dot(n, halfVector), 0.0), max(uShininess, 1.0)) *
-                      uSpecular * step(0.0, ndl);
+        float shininess = mix(uShininess, max(8.0, uShininess * 0.5), roughness);
+        float specular = uSpecular * mix(1.0, 0.35, roughness);
+        float shine = pow(max(dot(n, halfVector), 0.0), max(shininess, 1.0)) *
+                      specular * smoothstep(0.0, 0.15, ndl);
         float rim = pow(1.0 - max(n.z, 0.0), 3.0) * max(ndl, 0.0) * uRim;
         // Depth discontinuities are not real surface curvature. Fade the
         // additive highlights there to avoid colored halos on silhouettes.
@@ -112,7 +145,7 @@ void main() {
     }
 
     vec3 ambientLight = uAmbientColor * uAmbient;
-    vec3 illumination = ambientLight + direct;
+    vec3 illumination = (ambientLight + direct) * occlusion;
     vec3 result = base * illumination + highlights;
     if (uBaseMode == 0) {
         result = (base * illumination + highlights) / (uAmbient + 0.8);

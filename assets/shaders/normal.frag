@@ -59,17 +59,30 @@ void main() {
     slope *= uNormalStrength;
 
     // Add high-frequency albedo detail so a low-resolution depth map does not
-    // shade flat surfaces like smooth cardboard.
-    vec2 detailTexel = uTexel * 1.5;
-    vec2 detail = vec2(
-        -(colorLuma(vUv + vec2(detailTexel.x, 0.0)) -
-          colorLuma(vUv - vec2(detailTexel.x, 0.0))),
-        colorLuma(vUv + vec2(0.0, detailTexel.y)) -
-            colorLuma(vUv - vec2(0.0, detailTexel.y)));
+    // shade flat surfaces like smooth cardboard. A difference of two gradient
+    // scales cancels broad gradients such as baked shadows while keeping fine
+    // cloth, hair, and skin texture.
+    vec2 fineStep = uTexel * 1.5;
+    vec2 wideStep = uTexel * 3.0;
+    float fineL = colorLuma(vUv - vec2(fineStep.x, 0.0));
+    float fineR = colorLuma(vUv + vec2(fineStep.x, 0.0));
+    float fineB = colorLuma(vUv - vec2(0.0, fineStep.y));
+    float fineU = colorLuma(vUv + vec2(0.0, fineStep.y));
+    float wideL = colorLuma(vUv - vec2(wideStep.x, 0.0));
+    float wideR = colorLuma(vUv + vec2(wideStep.x, 0.0));
+    float wideB = colorLuma(vUv - vec2(0.0, wideStep.y));
+    float wideU = colorLuma(vUv + vec2(0.0, wideStep.y));
+    vec2 detail = vec2(-(fineR - fineL), fineU - fineB) -
+                  0.5 * vec2(-(wideR - wideL), wideU - wideB);
     // Cap per-axis albedo slopes so hard graphic edges (ties, glasses, text)
     // do not emboss as raised ridges while fine texture still survives.
     detail = clamp(detail, vec2(-0.08), vec2(0.08));
-    slope += detail * uDetailStrength * 8.0;
+    detail *= 1.0 - edgeMask;
+    // Dark hair and fabric carry weaker luminance contrast; boost their
+    // micro-normals so they do not collapse into a smooth leather sheen.
+    float darkBoost =
+        mix(2.0, 1.0, smoothstep(0.03, 0.35, colorLuma(vUv)));
+    slope += detail * uDetailStrength * 12.0 * darkBoost;
 
     // Depth discontinuities are handled by the lighting pass through
     // outNormal.a; keep their actual slope here so the normal view does not

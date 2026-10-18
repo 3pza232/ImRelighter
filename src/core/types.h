@@ -30,17 +30,17 @@ struct Settings {
     bool baseMode = false;
     float mix = 1.0f;
 
-    float ambient = 0.42f;
-    std::string ambientColor = "#b4bddc";
+    float ambient = 0.40f;
+    std::string ambientColor = "#c0c4cc";
     float wrap = 0.2f;
 
     bool shadows = true;
     float bias = 0.007f;
     float softness = 0.035f;
 
-    float specular = 0.13f;
+    float specular = 0.10f;
     float shininess = 60.0f;
-    float rim = 0.18f;
+    float rim = 0.15f;
 
     float exposure = 0.0f;
     float height = 0.65f;
@@ -49,7 +49,7 @@ struct Settings {
     float smooth = 1.0f;
     bool lineAssist = true;
     float normalStrength = 1.0f;
-    float detail = 0.0f;
+    float detail = 0.15f;
 
     bool flipX = false;
     bool flipY = false;

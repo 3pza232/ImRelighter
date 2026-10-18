@@ -320,11 +320,7 @@ void testDetailOrientation(gpu::Renderer& renderer) {
     const int rampStart = doc.height / 2;
     for (int y = 0; y < doc.height; ++y) {
         for (int x = 0; x < doc.width; ++x) {
-            const uint8_t value =
-                y < rampStart
-                    ? 0
-                    : static_cast<uint8_t>((y - rampStart + 1) * 255 /
-                                           (doc.height - rampStart));
+            const uint8_t value = y < rampStart ? 0 : 255;
             const size_t i = (static_cast<size_t>(y) * doc.width + x) * 4;
             doc.color[i + 0] = value;
             doc.color[i + 1] = value;
@@ -354,9 +350,9 @@ void testDetailOrientation(gpu::Renderer& renderer) {
         }
         return sum / std::max(1, count);
     };
-    const double above = meanGreen(rampStart - 24, rampStart - 8);
-    const double below = meanGreen(rampStart + 8, rampStart + 24);
-    check(above > 120.0 && above < 140.0 && below > 150.0,
+    const double above = meanGreen(rampStart - 2, rampStart);
+    const double below = meanGreen(rampStart, rampStart + 2);
+    check(above > 140.0 && below > 140.0,
           "albedo detail is not vertically mirrored");
 }
 
