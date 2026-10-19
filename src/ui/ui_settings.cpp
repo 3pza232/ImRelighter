@@ -15,7 +15,7 @@
 #include "ui/widgets.h"
 
 #ifndef IMRELIGHTER_VERSION
-#define IMRELIGHTER_VERSION "0.4.0"
+#define IMRELIGHTER_VERSION "0.4.1"
 #endif
 
 namespace ui {
@@ -286,8 +286,10 @@ void drawSettings(app::App& app) {
                             app.glRenderer().c_str());
                 ImGui::Spacing();
                 ImGui::TextUnformatted(app.tr("settings.shortcuts").c_str());
-                ImGui::TextDisabled("%s",
-                                    app.tr("settings.shortcuts_text").c_str());
+                ImGui::PushStyleColor(ImGuiCol_Text, theme::muted);
+                ImGui::TextWrapped("%s",
+                                   app.tr("settings.shortcuts_text").c_str());
+                ImGui::PopStyleColor();
                 ImGui::Spacing();
                 ImGui::TextUnformatted(app.tr("settings.licenses").c_str());
                 ImGui::TextDisabled(
