@@ -21,7 +21,7 @@ void drawStatusBar(app::App& app) {
             const float y =
                 (scaled(kStatusHeight) - ImGui::GetTextLineHeight()) * 0.5f;
             const std::string right =
-                "OpenGL 4.5  ·  " + backendLabel(app, app.config.backend);
+                backendLabel(app, app.config.backend);
             const float rightWidth = ImGui::CalcTextSize(right.c_str()).x;
             const float rightX =
                 ImGui::GetWindowWidth() - rightWidth - scaled(20.0f);

@@ -27,6 +27,7 @@ struct UiState {
     bool settingsOpen = false;
     bool exportPopupRequested = false;
     int draggingLight = 0;
+    int focusLight = 0;
     uint64_t scrollToTask = 0;
 
     std::string statusOverride;

@@ -245,10 +245,15 @@ void main() {
             // into mirror-like fireflies on fabric and hair. Material
             // roughness and metalness let the same depth map represent skin,
             // cloth, hair or metal instead of one generic plastic surface.
-            // Material roughness is the PBR base. Shininess still shapes the
-            // classic Blinn-Phong highlight, while micro contrast adds local
-            // roughness on fabric and hair.
-            float baseRoughness = clamp(uMaterialRoughness, 0.05, 1.0);
+            // Shininess controls the base lobe width (hardness), while
+            // material roughness adds a controllable roughness floor. This
+            // keeps both UI sliders visible instead of letting one hide the
+            // other. The default pair still lands near the previous 0.30 base.
+            float shininessRoughness =
+                clamp(sqrt(2.0 / max(uShininess + 2.0, 1.0)), 0.05, 1.0);
+            float baseRoughness =
+                clamp(shininessRoughness + uMaterialRoughness * 0.4,
+                      0.05, 1.0);
             float rough = clamp(
                 mix(baseRoughness, min(baseRoughness + 0.4, 1.0),
                     microRoughness),

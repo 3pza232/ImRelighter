@@ -356,6 +356,65 @@ void testDetailOrientation(gpu::Renderer& renderer) {
           "albedo detail is not vertically mirrored");
 }
 
+void testHighlightParameters(gpu::Renderer& renderer) {
+    core::Document doc;
+    doc.id = 104;
+    doc.width = 64;
+    doc.height = 64;
+    doc.hasDepth = true;
+    doc.color.assign(static_cast<size_t>(doc.width) * doc.height * 4, 160);
+    for (size_t i = 3; i < doc.color.size(); i += 4) doc.color[i] = 255;
+    doc.depth.assign(static_cast<size_t>(doc.width) * doc.height, 0.5f);
+    doc.settings.height = 0.2f;
+    doc.settings.smooth = 0.0f;
+    doc.settings.normalStrength = 1.0f;
+    doc.settings.detail = 0.0f;
+    doc.settings.rim = 0.0f;
+    doc.settings.shadows = false;
+    doc.settings.ambient = 0.02f;
+    doc.settings.specular = 1.0f;
+    doc.settings.shininess = 8.0f;
+    doc.settings.materialRoughness = 0.15f;
+    doc.lights = {core::makeLight(1, {0.0f, 0.0f, 1.2f})};
+    doc.lights[0].color = "#ffffff";
+    doc.lights[0].intensity = 0.8f;
+    doc.lights[0].range = 4.0f;
+
+    const auto soft = render(renderer, doc, core::View::Lit);
+    doc.settings.shininess = 512.0f;
+    const auto hard = render(renderer, doc, core::View::Lit);
+    if (soft.empty() || hard.empty()) return;
+    double hardnessDifference = 0.0;
+    for (size_t i = 0; i < soft.size(); i += 4) {
+        for (size_t c = 0; c < 3; ++c) {
+            hardnessDifference +=
+                std::abs(static_cast<double>(soft[i + c]) - hard[i + c]);
+        }
+    }
+    hardnessDifference /= static_cast<double>(soft.size() / 4 * 3);
+    check(hardnessDifference > 1.0,
+          "specular hardness changes the rendered highlight");
+
+    doc.settings.shininess = 60.0f;
+    doc.settings.specular = 0.0f;
+    const auto noSpecular = render(renderer, doc, core::View::Lit);
+    doc.settings.specular = 2.0f;
+    const auto strongSpecular = render(renderer, doc, core::View::Lit);
+    if (noSpecular.empty() || strongSpecular.empty()) return;
+    double specularDifference = 0.0;
+    for (size_t i = 0; i < noSpecular.size(); i += 4) {
+        for (size_t c = 0; c < 3; ++c) {
+            specularDifference +=
+                std::abs(static_cast<double>(noSpecular[i + c]) -
+                         strongSpecular[i + c]);
+        }
+    }
+    specularDifference /=
+        static_cast<double>(noSpecular.size() / 4 * 3);
+    check(specularDifference > 1.0,
+          "specular intensity changes the rendered highlight");
+}
+
 void testQualitySettings(gpu::Renderer& renderer) {
     core::Document doc = makeDocument();
     doc.settings.previewLongEdge = 1024;
@@ -447,6 +506,7 @@ int main() {
     testNormalVerticalOrientation(renderer);
     testNormalEdgeWidth(renderer);
     testDetailOrientation(renderer);
+    testHighlightParameters(renderer);
     testNormalFlip(renderer);
     testQualitySettings(renderer);
     testAlpha(renderer);

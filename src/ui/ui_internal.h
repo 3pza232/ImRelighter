@@ -28,7 +28,6 @@ inline constexpr float kTaskPadding = 12.0f;
 inline constexpr float kTaskCloseWidth = 30.0f;
 inline constexpr float kTaskCloseGap = 6.0f;
 inline constexpr float kSettingsLabelWidth = 150.0f;
-inline constexpr float kPositionBoxHeight = 92.0f;
 
 extern float uiScale;
 

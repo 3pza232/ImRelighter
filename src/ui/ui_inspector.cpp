@@ -191,7 +191,13 @@ void drawImageSection(app::App& app) {
     ImGui::SeparatorText(app.tr("panel.image.depth").c_str());
     ImGui::TextUnformatted(app.tr("panel.image.backend").c_str());
     ImGui::SameLine(scaled(kLabelWidth));
-    ImGui::TextDisabled("%s", backendLabel(app, app.config.backend).c_str());
+    const std::string backendText = backendLabel(app, app.config.backend);
+    const char* backendItems[] = {backendText.c_str()};
+    int backendIndex = 0;
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::BeginDisabled(true);
+    ImGui::Combo("##backend_readonly", &backendIndex, backendItems, 1);
+    ImGui::EndDisabled();
 
     ImGui::TextUnformatted(app.tr("inference.size").c_str());
     ImGui::SameLine(scaled(kLabelWidth));
@@ -219,12 +225,17 @@ void drawImageSection(app::App& app) {
     const bool runningThis =
         inferenceBusy && active && app.inferenceDocumentId() == active->id;
     const bool runningOther = inferenceBusy && !runningThis;
-    ImGui::TextDisabled(
-        "%s", app.tr(runningThis ? "depth.running"
-                                 : runningOther ? "depth.other_running"
-                                                : hasDepth ? "depth.ready"
-                                                           : "depth.not_generated")
-                  .c_str());
+    const std::string depthText =
+        app.tr(runningThis ? "depth.running"
+                           : runningOther ? "depth.other_running"
+                                          : hasDepth ? "depth.ready"
+                                                     : "depth.not_generated");
+    const char* depthItems[] = {depthText.c_str()};
+    int depthIndex = 0;
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::BeginDisabled(true);
+    ImGui::Combo("##depth_readonly", &depthIndex, depthItems, 1);
+    ImGui::EndDisabled();
 
     ImGui::Spacing();
     const bool canGenerate = app.hasTask() && !inferenceBusy;
@@ -290,6 +301,8 @@ void drawLightSection(app::App& app) {
         if (ImGui::Selectable(label.c_str(),
                               doc->selectedLight == light.id)) {
             doc->selectedLight = light.id;
+            // Consumed by the canvas: center this marker and switch to 200%.
+            app.ui.focusLight = light.id;
         }
         if (!light.enabled) ImGui::PopStyleVar();
         ImGui::PopID();
@@ -428,8 +441,9 @@ void drawLightSection(app::App& app) {
         const float positionMin[3] = {-3.0f, -3.0f, 0.1f};
         const float positionMax[3] = {3.0f, 3.0f, 4.0f};
         {
-            Box positionBox("##position_box", ImVec2(0.0f, scaled(kPositionBoxHeight)),
-                            10.0f, true);
+            // Card auto-resizes to its content; an explicit height left an
+            // empty strip below the X/Y/Z fields.
+            Card positionBox("##position_box", 10.0f, theme::panel2);
             if (positionBox) {
                 vector3Control("##position", selected->position.data(),
                                positionMin, positionMax);

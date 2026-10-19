@@ -30,6 +30,19 @@ ImU32 lightColorU32(const std::string& hex, int alpha) {
                     static_cast<int>(color.z * 255.0f), alpha);
 }
 
+ImU32 lightLabelU32(const std::string& hex, int alpha) {
+    // The marker fill is the light color, not the panel background. Choose a
+    // neutral number color from its luminance so bright lights get dark digits
+    // and dark lights get light digits in both themes.
+    const ImVec4 color = hexToVec4(hex);
+    const float luma = std::clamp(0.2126f * color.x + 0.7152f * color.y +
+                                      0.0722f * color.z,
+                                  0.0f, 1.0f);
+    const int value =
+        static_cast<int>(std::lround(255.0f - luma * 235.0f));
+    return IM_COL32(value, value, value, alpha);
+}
+
 } // namespace
 
 void drawEmptyCanvas(app::App& app) {
@@ -86,6 +99,26 @@ void drawImageCanvas(app::App& app) {
         doc->panX = 0.0f;
         doc->panY = 0.0f;
         doc->fitPending = false;
+    }
+
+    if (app.ui.focusLight != 0) {
+        const auto focused = std::find_if(
+            doc->lights.begin(), doc->lights.end(),
+            [&](const core::Light& light) {
+                return light.id == app.ui.focusLight;
+            });
+        if (focused != doc->lights.end()) {
+            const float aspect =
+                static_cast<float>(doc->width) / static_cast<float>(doc->height);
+            const float u = focused->position[0] / aspect * 0.5f + 0.5f;
+            const float v = 0.5f - focused->position[1] * 0.5f;
+            const float focusScale = fitScale * 2.0f;
+            doc->zoom = 2.0f;
+            doc->panX = (0.5f - u) * doc->width * focusScale;
+            doc->panY = (0.5f - v) * doc->height * focusScale;
+            doc->fitPending = false;
+        }
+        app.ui.focusLight = 0;
     }
 
     const ImVec2 areaCenter(areaMin.x + areaSize.x * 0.5f,
@@ -245,7 +278,8 @@ void drawImageCanvas(app::App& app) {
             const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
             draw->AddText(ImVec2(marker.x - textSize.x * 0.5f,
                                  marker.y - textSize.y * 0.5f),
-                          theme::u32(theme::ink, (light.enabled ? 240.0f : 140.0f) / 255.0f),
+                          lightLabelU32(light.color,
+                                        light.enabled ? 240 : 140),
                           label.c_str());
         }
     }
