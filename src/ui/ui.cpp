@@ -42,7 +42,17 @@ void draw(app::App& app) {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, theme::bg);
     ImGui::Begin("##root", nullptr, kRootFlags);
+
+    // Paint the root background explicitly as well as through WindowBg. The
+    // rounded child panels leave thin seams; this keeps those seams in sync
+    // with theme switches even if a window cached the previous style color.
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        ImGui::GetWindowPos(),
+        ImVec2(ImGui::GetWindowPos().x + display.x,
+               ImGui::GetWindowPos().y + display.y),
+        theme::u32(theme::bg));
 
     drawTopBar(app);
 
@@ -65,6 +75,7 @@ void draw(app::App& app) {
     ImGui::SetCursorPos(ImVec2(0.0f, display.y - scaled(kStatusHeight)));
     drawStatusBar(app);
     ImGui::End();
+    ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
 
     drawExportMenu(app);
