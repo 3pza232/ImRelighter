@@ -38,6 +38,12 @@ void centeredText(const char* text);
 bool segmentButton(const char* label, bool active,
                    const ImVec2& size = ImVec2(0.0f, 0.0f));
 
+// Read-only value field with an input-like frame. It deliberately has no
+// combo arrow: a single-item or disabled choice should look like a value,
+// not like a control the user can open.
+bool readOnlyField(const char* id, const char* text,
+                   const ImVec2& size = ImVec2(0.0f, 0.0f));
+
 // Three-axis vector editor with per-axis colors and consistent spacing.
 bool vector3Control(const char* id, float values[3], const float mins[3],
                     const float maxs[3], float speed = 0.01f,

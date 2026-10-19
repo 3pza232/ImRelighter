@@ -113,6 +113,31 @@ bool segmentButton(const char* label, bool active, const ImVec2& size) {
     return clicked;
 }
 
+bool readOnlyField(const char* id, const char* text, const ImVec2& size) {
+    ImGuiStyle& style = ImGui::GetStyle();
+    const float width =
+        size.x > 0.0f ? size.x : ImGui::GetContentRegionAvail().x;
+    const float height =
+        size.y > 0.0f ? size.y : ImGui::GetFrameHeight();
+    ImGui::InvisibleButton(id, ImVec2(width, height));
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(min, max, theme::u32(theme::panel2),
+                        style.FrameRounding);
+    draw->AddRect(min, max, theme::u32(theme::border), style.FrameRounding);
+    draw->PushClipRect(
+        ImVec2(min.x + style.FramePadding.x, min.y),
+        ImVec2(max.x - style.FramePadding.x, max.y), true);
+    const ImVec2 textSize = ImGui::CalcTextSize(text);
+    draw->AddText(
+        ImVec2(min.x + style.FramePadding.x,
+               min.y + (height - textSize.y) * 0.5f),
+        theme::u32(theme::muted), text);
+    draw->PopClipRect();
+    return false;
+}
+
 bool vector3Control(const char* id, float values[3], const float mins[3],
                     const float maxs[3], float speed, const char* format) {
     ImGui::PushID(id);

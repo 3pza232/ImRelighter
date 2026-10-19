@@ -116,6 +116,68 @@ void applyMaterialPreset(core::Document& doc, int preset) {
     }
 }
 
+void applyLightPreset(core::Document& doc, int preset) {
+    if (preset == 0) { // sunset: warm low key with a soft warm rim
+        doc.lights = {
+            core::makeLight(1, {-1.55f, 0.25f, 1.55f}),
+            core::makeLight(2, {1.15f, 0.85f, 2.10f}),
+            core::makeLight(3, {1.25f, -0.30f, 2.05f}),
+        };
+        doc.lights[0].color = "#ff9a5c";
+        doc.lights[0].intensity = 2.35f;
+        doc.lights[0].range = 6.0f;
+        doc.lights[1].color = "#ffd2a8";
+        doc.lights[1].intensity = 1.05f;
+        doc.lights[1].range = 6.5f;
+        doc.lights[2].color = "#ffb070";
+        doc.lights[2].intensity = 0.55f;
+        doc.lights[2].range = 5.0f;
+    } else if (preset == 1) { // moon: cool high key and pale rim
+        doc.lights = {
+            core::makeLight(1, {-0.9f, 1.10f, 1.90f}),
+            core::makeLight(2, {0.7f, 0.80f, 2.25f}),
+            core::makeLight(3, {0.2f, -0.60f, 2.35f}),
+        };
+        doc.lights[0].color = "#b9d4ff";
+        doc.lights[0].intensity = 1.35f;
+        doc.lights[0].range = 7.0f;
+        doc.lights[1].color = "#e0edff";
+        doc.lights[1].intensity = 1.75f;
+        doc.lights[1].range = 6.0f;
+        doc.lights[2].color = "#8fa8d8";
+        doc.lights[2].intensity = 0.40f;
+        doc.lights[2].range = 6.0f;
+    } else { // stage: four lights from distinct angles, all in front of the image
+        doc.lights = {
+            core::makeLight(1, {-1.8f, 0.35f, 1.70f}),
+            core::makeLight(2, {1.65f, 0.60f, 1.55f}),
+            core::makeLight(3, {-0.35f, 1.45f, 2.30f}),
+            core::makeLight(4, {0.35f, -0.95f, 2.00f}),
+        };
+        doc.lights[0].color = "#ffd2a8";
+        doc.lights[0].intensity = 2.20f;
+        doc.lights[0].range = 6.0f;
+        doc.lights[0].type = core::LightType::Spot;
+        doc.lights[0].spotAngle = 58.0f;
+        doc.lights[0].spotSoftness = 0.45f;
+        doc.lights[1].color = "#aac8ff";
+        doc.lights[1].intensity = 1.50f;
+        doc.lights[1].range = 6.0f;
+        doc.lights[1].type = core::LightType::Spot;
+        doc.lights[1].spotAngle = 52.0f;
+        doc.lights[1].spotSoftness = 0.50f;
+        doc.lights[2].color = "#ffffff";
+        doc.lights[2].intensity = 1.80f;
+        doc.lights[2].range = 7.0f;
+        doc.lights[3].color = "#ffb890";
+        doc.lights[3].intensity = 0.80f;
+        doc.lights[3].range = 5.0f;
+    }
+    doc.selectedLight = doc.lights.front().id;
+    doc.soloLight = 0;
+    doc.animate = false;
+}
+
 void applyRenderPreset(app::App& app, int preset) {
     core::Document* doc = app.activeDocument();
     if (!doc) return;
@@ -192,12 +254,7 @@ void drawImageSection(app::App& app) {
     ImGui::TextUnformatted(app.tr("panel.image.backend").c_str());
     ImGui::SameLine(scaled(kLabelWidth));
     const std::string backendText = backendLabel(app, app.config.backend);
-    const char* backendItems[] = {backendText.c_str()};
-    int backendIndex = 0;
-    ImGui::SetNextItemWidth(-1.0f);
-    ImGui::BeginDisabled(true);
-    ImGui::Combo("##backend_readonly", &backendIndex, backendItems, 1);
-    ImGui::EndDisabled();
+    readOnlyField("##backend_readonly", backendText.c_str());
 
     ImGui::TextUnformatted(app.tr("inference.size").c_str());
     ImGui::SameLine(scaled(kLabelWidth));
@@ -230,12 +287,7 @@ void drawImageSection(app::App& app) {
                            : runningOther ? "depth.other_running"
                                           : hasDepth ? "depth.ready"
                                                      : "depth.not_generated");
-    const char* depthItems[] = {depthText.c_str()};
-    int depthIndex = 0;
-    ImGui::SetNextItemWidth(-1.0f);
-    ImGui::BeginDisabled(true);
-    ImGui::Combo("##depth_readonly", &depthIndex, depthItems, 1);
-    ImGui::EndDisabled();
+    readOnlyField("##depth_readonly", depthText.c_str());
 
     ImGui::Spacing();
     const bool canGenerate = app.hasTask() && !inferenceBusy;
@@ -313,48 +365,19 @@ void drawLightSection(app::App& app) {
     const float lightPresetGap = scaled(4.0f);
     const float lightPresetWidth =
         (ImGui::GetContentRegionAvail().x - 2.0f * lightPresetGap) / 3.0f;
-    if (ImGui::Button(app.tr("light.preset_three").c_str(),
+    if (ImGui::Button(app.tr("light.preset_sunset").c_str(),
                       ImVec2(lightPresetWidth, 0.0f))) {
-        doc->lights = {
-            core::makeLight(1, {-1.35f, 1.15f, 1.8f}),
-            core::makeLight(2, {1.45f, 0.25f, 1.5f}),
-            core::makeLight(3, {0.25f, 0.85f, 1.9f}),
-        };
-        doc->lights[0].color = "#ffe3c4";
-        doc->lights[0].intensity = 2.2f;
-        doc->lights[1].color = "#c8d8ff";
-        doc->lights[1].intensity = 1.1f;
-        doc->lights[2].color = "#ffffff";
-        doc->lights[2].type = core::LightType::Spot;
-        doc->lights[2].spotAngle = 48.0f;
-        doc->lights[2].intensity = 1.8f;
-        doc->selectedLight = 1;
-        doc->soloLight = 0;
+        applyLightPreset(*doc, 0);
     }
     ImGui::SameLine(0.0f, lightPresetGap);
-    if (ImGui::Button(app.tr("light.preset_window").c_str(),
+    if (ImGui::Button(app.tr("light.preset_moon").c_str(),
                       ImVec2(lightPresetWidth, 0.0f))) {
-        doc->lights = {core::makeLight(1, {-0.8f, 0.7f, 2.2f})};
-        doc->lights[0].color = "#e8f0ff";
-        doc->lights[0].intensity = 2.4f;
-        doc->lights[0].range = 6.0f;
-        doc->selectedLight = 1;
-        doc->soloLight = 0;
+        applyLightPreset(*doc, 1);
     }
     ImGui::SameLine(0.0f, lightPresetGap);
-    if (ImGui::Button(app.tr("light.preset_rim").c_str(),
+    if (ImGui::Button(app.tr("light.preset_stage").c_str(),
                       ImVec2(lightPresetWidth, 0.0f))) {
-        doc->lights = {
-            core::makeLight(1, {-0.45f, 0.45f, 2.0f}),
-            core::makeLight(2, {0.5f, 0.8f, -1.6f}),
-        };
-        doc->lights[0].color = "#ffe6c8";
-        doc->lights[0].intensity = 1.8f;
-        doc->lights[1].color = "#cfe4ff";
-        doc->lights[1].intensity = 2.6f;
-        doc->lights[1].range = 4.5f;
-        doc->selectedLight = 1;
-        doc->soloLight = 0;
+        applyLightPreset(*doc, 2);
     }
 
     ImGui::Spacing();
