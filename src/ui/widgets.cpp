@@ -1,7 +1,10 @@
 #include "ui/widgets.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 
+#include "core/color.h"
 #include "ui/theme.h"
 
 namespace ui {
@@ -111,6 +114,99 @@ bool segmentButton(const char* label, bool active, const ImVec2& size) {
     const bool clicked = ImGui::Button(label, size);
     if (active) ImGui::PopStyleColor(4);
     return clicked;
+}
+
+bool labelValueRow(const char* label, const char* value, float labelWidth) {
+    formLabel(label, labelWidth);
+    ImGui::PushID(label);
+    const bool hovered = readOnlyField("##value", value);
+    ImGui::PopID();
+    return hovered;
+}
+
+bool formSliderFloat(const char* id, const char* label, float& value, float min,
+                     float max, const char* format, float labelWidth) {
+    ImGui::PushID(id);
+    formLabel(label, labelWidth);
+    ImGui::SetNextItemWidth(-1.0f);
+    const bool changed = ImGui::SliderFloat("##value", &value, min, max,
+                                            format, ImGuiSliderFlags_AlwaysClamp);
+    ImGui::PopID();
+    return changed;
+}
+
+bool formSliderInt(const char* id, const char* label, int& value, int min,
+                   int max, float labelWidth) {
+    ImGui::PushID(id);
+    formLabel(label, labelWidth);
+    ImGui::SetNextItemWidth(-1.0f);
+    float dragged = static_cast<float>(value);
+    const bool changed = ImGui::SliderFloat(
+        "##value", &dragged, static_cast<float>(min), static_cast<float>(max),
+        "%.0f", ImGuiSliderFlags_AlwaysClamp);
+    if (changed) {
+        const int rounded = std::clamp(
+            static_cast<int>(std::lround(dragged)), min, max);
+        if (rounded != value) {
+            value = rounded;
+            ImGui::PopID();
+            return true;
+        }
+    }
+    ImGui::PopID();
+    return false;
+}
+
+bool formCheckbox(const char* id, const char* label, bool& value) {
+    ImGui::PushID(id);
+    const bool changed = ImGui::Checkbox(label, &value);
+    ImGui::PopID();
+    return changed;
+}
+
+bool formColor(const char* id, const char* label, std::string& hex,
+               float labelWidth) {
+    const auto parsed = core::parseHexColor(hex);
+    float rgb[3] = {parsed ? (*parsed)[0] : 1.0f,
+                    parsed ? (*parsed)[1] : 1.0f,
+                    parsed ? (*parsed)[2] : 1.0f};
+    ImGui::PushID(id);
+    formLabel(label, labelWidth);
+    ImGui::SetNextItemWidth(-1.0f);
+    const bool changed = ImGui::ColorEdit3(
+        "##color", rgb,
+        ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+    if (changed) {
+        char buffer[8];
+        std::snprintf(buffer, sizeof(buffer), "#%02x%02x%02x",
+                      static_cast<int>(std::lround(
+                          std::clamp(rgb[0], 0.0f, 1.0f) * 255.0f)),
+                      static_cast<int>(std::lround(
+                          std::clamp(rgb[1], 0.0f, 1.0f) * 255.0f)),
+                      static_cast<int>(std::lround(
+                          std::clamp(rgb[2], 0.0f, 1.0f) * 255.0f)));
+        hex = buffer;
+    }
+    ImGui::PopID();
+    return changed;
+}
+
+bool formCombo(const char* id, const char* label, int& index,
+               const char* const* items, int count, float labelWidth) {
+    ImGui::PushID(id);
+    formLabel(label, labelWidth);
+    ImGui::SetNextItemWidth(-1.0f);
+    const bool changed = ImGui::Combo("##value", &index, items, count);
+    ImGui::PopID();
+    return changed;
+}
+
+DisabledScope::DisabledScope(bool disabled) : enabled_(disabled) {
+    if (enabled_) ImGui::BeginDisabled();
+}
+
+DisabledScope::~DisabledScope() {
+    if (enabled_) ImGui::EndDisabled();
 }
 
 bool readOnlyField(const char* id, const char* text, const ImVec2& size) {

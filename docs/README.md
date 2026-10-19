@@ -5,6 +5,7 @@
 | 文档 | 内容 |
 |---|---|
 | [architecture.md](architecture.md) | 分层、模块边界、数据流、渲染管线与关键约定 |
+| [ui-kit.md](ui-kit.md) | ImGui 角色、可复用 UI 组件、使用约定与复用方式 |
 | [build.md](build.md) | 工具链、构建、产物与运行时依赖 |
 | [usage.md](usage.md) | 界面、快捷键、任务、模型选择与导出 |
 | [models.md](models.md) | ONNX 模型兼容性、预处理配置与运行时假设 |

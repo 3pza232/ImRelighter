@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "imgui.h"
 
 namespace ui {
@@ -43,6 +45,33 @@ bool segmentButton(const char* label, bool active,
 // not like a control the user can open.
 bool readOnlyField(const char* id, const char* text,
                    const ImVec2& size = ImVec2(0.0f, 0.0f));
+
+// Reusable form primitives. Labels are passed in (already localized) and the
+// value widget uses the full remaining width, matching the inspector layout.
+bool labelValueRow(const char* label, const char* value, float labelWidth);
+bool formSliderFloat(const char* id, const char* label, float& value, float min,
+                     float max, const char* format, float labelWidth);
+bool formSliderInt(const char* id, const char* label, int& value, int min,
+                   int max, float labelWidth);
+bool formCheckbox(const char* id, const char* label, bool& value);
+bool formColor(const char* id, const char* label, std::string& hex,
+               float labelWidth);
+bool formCombo(const char* id, const char* label, int& index,
+               const char* const* items, int count, float labelWidth);
+
+// RAII disabled-state scope. Useful for read-only property groups without
+// repeating BeginDisabled/EndDisabled on every control.
+class DisabledScope {
+public:
+    explicit DisabledScope(bool disabled = true);
+    ~DisabledScope();
+
+    DisabledScope(const DisabledScope&) = delete;
+    DisabledScope& operator=(const DisabledScope&) = delete;
+
+private:
+    bool enabled_ = false;
+};
 
 // Three-axis vector editor with per-axis colors and consistent spacing.
 bool vector3Control(const char* id, float values[3], const float mins[3],

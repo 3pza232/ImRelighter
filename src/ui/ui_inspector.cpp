@@ -3,8 +3,6 @@
 #include <imgui.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cstdio>
 #include <string>
 
 #include "app/app.h"
@@ -22,65 +20,23 @@ void sectionCardHeader(app::App& app, const char* key) {
 
 bool sliderRow(app::App& app, const char* labelKey, float& value, float min,
                float max, const char* format) {
-    ImGui::PushID(labelKey);
-    formLabel(app.tr(labelKey).c_str(), scaled(kLabelWidth));
-    ImGui::SetNextItemWidth(-1.0f);
-    const bool changed = ImGui::SliderFloat("##value", &value, min, max, format);
-    ImGui::PopID();
-    return changed;
+    return formSliderFloat(labelKey, app.tr(labelKey).c_str(), value, min, max,
+                           format, scaled(kLabelWidth));
 }
 
 bool sliderIntRow(app::App& app, const char* labelKey, int& value, int min,
                   int max) {
-    ImGui::PushID(labelKey);
-    formLabel(app.tr(labelKey).c_str(), scaled(kLabelWidth));
-    ImGui::SetNextItemWidth(-1.0f);
-    float dragged = static_cast<float>(value);
-    const bool changed = ImGui::SliderFloat(
-        "##value", &dragged, static_cast<float>(min), static_cast<float>(max),
-        "%.0f", ImGuiSliderFlags_AlwaysClamp);
-    if (changed) {
-        const int rounded = std::clamp(
-            static_cast<int>(std::lround(dragged)), min, max);
-        if (rounded != value) {
-            value = rounded;
-            ImGui::PopID();
-            return true;
-        }
-    }
-    ImGui::PopID();
-    return false;
+    return formSliderInt(labelKey, app.tr(labelKey).c_str(), value, min, max,
+                         scaled(kLabelWidth));
 }
 
 bool checkboxRow(app::App& app, const char* labelKey, bool& value) {
-    ImGui::PushID(labelKey);
-    const bool changed = ImGui::Checkbox(app.tr(labelKey).c_str(), &value);
-    ImGui::PopID();
-    return changed;
-}
-
-std::string vec3ToHex(const float rgb[3]) {
-    char buffer[8];
-    std::snprintf(buffer, sizeof(buffer), "#%02x%02x%02x",
-                  static_cast<int>(std::lround(std::clamp(rgb[0], 0.0f, 1.0f) * 255.0f)),
-                  static_cast<int>(std::lround(std::clamp(rgb[1], 0.0f, 1.0f) * 255.0f)),
-                  static_cast<int>(std::lround(std::clamp(rgb[2], 0.0f, 1.0f) * 255.0f)));
-    return buffer;
+    return formCheckbox(labelKey, app.tr(labelKey).c_str(), value);
 }
 
 bool colorRow(app::App& app, const char* labelKey, std::string& color) {
-    ImGui::PushID(labelKey);
-    formLabel(app.tr(labelKey).c_str(), scaled(kLabelWidth));
-
-    ImVec4 value = hexToVec4(color);
-    float rgb[3] = {value.x, value.y, value.z};
-    ImGui::SetNextItemWidth(-1.0f);
-    const bool changed = ImGui::ColorEdit3("##color", rgb,
-                                           ImGuiColorEditFlags_NoInputs |
-                                               ImGuiColorEditFlags_NoLabel);
-    if (changed) color = vec3ToHex(rgb);
-    ImGui::PopID();
-    return changed;
+    return formColor(labelKey, app.tr(labelKey).c_str(), color,
+                     scaled(kLabelWidth));
 }
 
 void applyMaterialPreset(core::Document& doc, int preset) {
@@ -251,13 +207,10 @@ void drawImageSection(app::App& app) {
 
     ImGui::Spacing();
     ImGui::SeparatorText(app.tr("panel.image.depth").c_str());
-    ImGui::TextUnformatted(app.tr("panel.image.backend").c_str());
-    ImGui::SameLine(scaled(kLabelWidth));
     const std::string backendText = backendLabel(app, app.config.backend);
-    readOnlyField("##backend_readonly", backendText.c_str());
+    labelValueRow(app.tr("panel.image.backend").c_str(), backendText.c_str(),
+                  scaled(kLabelWidth));
 
-    ImGui::TextUnformatted(app.tr("inference.size").c_str());
-    ImGui::SameLine(scaled(kLabelWidth));
     const std::string autoLabel = app.tr("inference.auto");
     const char* sizeLabels[] = {autoLabel.c_str(), "384", "504", "518", "672"};
     int sizeIndex = 0;
@@ -265,17 +218,14 @@ void drawImageSection(app::App& app) {
     else if (doc->settings.inferenceSize == 504) sizeIndex = 2;
     else if (doc->settings.inferenceSize == 518) sizeIndex = 3;
     else if (doc->settings.inferenceSize == 672) sizeIndex = 4;
-    ImGui::SetNextItemWidth(-1.0f);
-    ImGui::BeginDisabled(!hasDocument);
-    if (ImGui::Combo("##inference_size", &sizeIndex, sizeLabels,
-                     IM_ARRAYSIZE(sizeLabels))) {
+    DisabledScope sizeDisabled(!hasDocument);
+    if (formCombo("inference_size", app.tr("inference.size").c_str(),
+                  sizeIndex, sizeLabels, IM_ARRAYSIZE(sizeLabels),
+                  scaled(kLabelWidth))) {
         const int sizes[] = {0, 384, 504, 518, 672};
         doc->settings.inferenceSize = sizes[sizeIndex];
     }
-    ImGui::EndDisabled();
 
-    ImGui::TextUnformatted(app.tr("panel.image.depth").c_str());
-    ImGui::SameLine(scaled(kLabelWidth));
     const core::Document* active = app.activeDocument();
     const bool hasDepth = active && active->hasDepth;
     const bool inferenceBusy = app.inferenceBusy();
@@ -287,7 +237,8 @@ void drawImageSection(app::App& app) {
                            : runningOther ? "depth.other_running"
                                           : hasDepth ? "depth.ready"
                                                      : "depth.not_generated");
-    readOnlyField("##depth_readonly", depthText.c_str());
+    labelValueRow(app.tr("panel.image.depth").c_str(), depthText.c_str(),
+                  scaled(kLabelWidth));
 
     ImGui::Spacing();
     const bool canGenerate = app.hasTask() && !inferenceBusy;
