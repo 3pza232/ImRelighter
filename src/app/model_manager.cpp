@@ -150,6 +150,13 @@ void ModelManager::inspect() {
         // than showing only a generic error.
         std::string weightError;
         inspectModelWeights(modelFile, result.weights, &weightError);
+        const std::string filename = modelFile.filename().string();
+        if (filename.find("int8") != std::string::npos) {
+            result.error =
+                "int8 ConvInteger operations are not supported by the bundled "
+                "ONNX Runtime/DirectML; use q4, q4f16, FP16 or FP32.";
+            return result;
+        }
         ml::OnnxSession session;
         if (!session.load(runtime, modelFile, false, &error)) {
             // Quantized exports may be usable only through DirectML even when

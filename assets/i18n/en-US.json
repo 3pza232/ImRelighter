@@ -168,6 +168,7 @@
   "settings.licenses": "Third-party Licenses",
   "model.invalid_file": "Choose a valid .onnx model file",
   "model.not_selected": "No model selected",
+  "model.int8_unsupported": "The int8 model's ConvInteger operator is not supported by the bundled ONNX Runtime/DirectML. Use q4, q4f16, FP16 or FP32 instead.",
   "document.limit": "Task limit reached",
   "document.memory": "Memory limit reached; close some tasks",
   "document.open_partial": "Some images could not be opened",

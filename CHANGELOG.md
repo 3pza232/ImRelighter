@@ -14,7 +14,8 @@
 
 ### Fixed
 
-- q4、q4f16、bnb4 量化导出保持 FLOAT32/FLOAT16 输入输出时可直接尝试；int8 若依赖 `ConvInteger` 等当前 ONNX Runtime CPU 未实现的算子，会显示具体加载错误，而不是静默失败。
+- q4、q4f16、bnb4 量化导出保持 FLOAT32/FLOAT16 输入输出时可直接尝试；int8 依赖 `ConvInteger` 时当前 ONNX Runtime/DirectML 不支持，应用会直接提示改用 q4/q4f16/FP16/FP32，避免 DirectML 返回泥浆状深度。
+- 高平滑档的法线 Pass 增加 3×3 中值预滤波，抑制噪声深度在平滑表面产生的沙砾法线。
 
 ## [0.4.1] - 2026-10-19
 

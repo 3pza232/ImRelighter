@@ -168,6 +168,7 @@
   "settings.licenses": "第三方许可证",
   "model.invalid_file": "请选择有效的 .onnx 模型文件",
   "model.not_selected": "未选择模型",
+  "model.int8_unsupported": "int8 模型的 ConvInteger 算子不受当前 ONNX Runtime/DirectML 支持，请改用 q4、q4f16、FP16 或 FP32 模型。",
   "document.limit": "已达到任务数量上限",
   "document.memory": "已达到内存上限，请关闭部分任务",
   "document.open_partial": "部分图片打开失败",

@@ -24,7 +24,7 @@ models/
 
 - 默认使用 **q4f16** 量化模型，体积小、加载快，适合作为随包默认值。
 - q4、q4f16、bnb4 等量化导出通常保持 FLOAT32/FLOAT16 输入输出，可以由 ONNX Runtime 直接加载。
-- int8 导出若包含 `ConvInteger` 等当前 ONNX Runtime CPU 未实现的算子，会加载失败；设置页会显示模型类型和 ONNX Runtime 错误，不会静默回退。
+- int8 导出若包含 `ConvInteger`，当前 ONNX Runtime CPU 没有该实现，DirectML 上也可能得到错误结果；应用会直接拒绝并提示改用 q4/q4f16/FP16/FP32。
 - 需要更高质量时，可在设置中选择自己下载的 FP32/FP16 或兼容量化模型。
 
 ## 来源

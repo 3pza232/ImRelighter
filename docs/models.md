@@ -24,7 +24,7 @@ models/depth-anything-v2-small/
 - FLOAT16 输入会自动从归一化 float32 转换；输出会转回 float32
 - 转换使用 round-to-nearest-even，处理 NaN、Inf、正规数、次正规数与下溢
 - **q4 / q4f16 / bnb4** 量化导出通常保持浮点输入输出，可直接尝试；当前随包的 q4f16 已作为默认模型验证
-- **int8** 导出如果包含 `ConvInteger` 等 ONNX Runtime CPU 未实现的算子，会明确报加载错误；设置页仍会显示识别到的 `int8` 类型，不会静默假装可用
+- **int8** 导出通常使用 `ConvInteger`；当前随包的 ONNX Runtime CPU 没有该实现，DirectML 上也可能返回错误/异常结果。应用会直接提示改用 q4/q4f16/FP16/FP32，不把泥浆状深度当成可用结果
 - 固定输入尺寸、多输入/多输出模型仍需要额外适配
 
 ## 预处理配置
