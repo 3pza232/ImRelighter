@@ -8,6 +8,11 @@ namespace ml {
 struct WeightInfo {
     int fp16 = 0;
     int fp32 = 0;
+    int bf16 = 0;
+    int int8 = 0;
+    int uint8 = 0;
+    int int4 = 0;
+    int uint4 = 0;
     int other = 0;
 };
 

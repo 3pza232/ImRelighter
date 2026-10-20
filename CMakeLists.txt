@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(ImRelighter VERSION 0.4.1 LANGUAGES C CXX)
+project(ImRelighter VERSION 0.4.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -161,7 +161,7 @@ if(BUILD_TESTING)
     target_compile_definitions(imrelighter_tests PRIVATE
         "IMRELIGHTER_I18N_DIR=\"${CMAKE_SOURCE_DIR}/assets/i18n\""
         "IMRELIGHTER_TEST_WEBP=\"${CMAKE_SOURCE_DIR}/tests/data/test.webp\""
-        "IMRELIGHTER_PREPROCESSOR_CONFIG=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/preprocessor_config.json\"")
+        "IMRELIGHTER_PREPROCESSOR_CONFIG=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/q4f16/preprocessor_config.json\"")
     add_custom_command(TARGET imrelighter_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${EXTERN_DIR}/libwebp/libwebp.dll"
@@ -209,7 +209,7 @@ if(BUILD_TESTING)
     target_link_libraries(imrelighter_inference_bench PRIVATE
         imrelighter_warnings)
     target_compile_definitions(imrelighter_inference_bench PRIVATE
-        "IMRELIGHTER_MODEL_PATH=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/model.onnx\""
+        "IMRELIGHTER_MODEL_PATH=\"${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/q4f16/model_q4f16.onnx\""
         "IMRELIGHTER_ORT_DLL=\"${CMAKE_SOURCE_DIR}/extern/onnxruntime/lib/onnxruntime.dll\"")
     set_target_properties(imrelighter_inference_bench PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
@@ -239,10 +239,10 @@ add_dependencies(ImRelighter imrelighter_sync_assets)
 
 add_custom_command(TARGET ImRelighter POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small"
+            "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/q4f16"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/model.onnx"
-            "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/model.onnx"
+            "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/q4f16/model_q4f16.onnx"
+            "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/q4f16/model_q4f16.onnx"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/LICENSE"
             "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/LICENSE"
@@ -284,9 +284,9 @@ add_custom_command(TARGET ImRelighter POST_BUILD
             "$<TARGET_FILE_DIR:ImRelighter>/PATENTS-LIBWEBP.txt"
     COMMENT "Copying assets, model and runtime DLLs")
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/preprocessor_config.json")
+if(EXISTS "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/q4f16/preprocessor_config.json")
     add_custom_command(TARGET ImRelighter POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/preprocessor_config.json"
-                "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/preprocessor_config.json")
+                "${CMAKE_SOURCE_DIR}/models/depth-anything-v2-small/q4f16/preprocessor_config.json"
+                "$<TARGET_FILE_DIR:ImRelighter>/models/depth-anything-v2-small/q4f16/preprocessor_config.json")
 endif()

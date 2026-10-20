@@ -50,11 +50,11 @@ std::filesystem::path assetPath(std::string_view relative) {
 }
 
 std::filesystem::path modelDir() {
-    return exeDir() / L"models" / L"depth-anything-v2-small";
+    return exeDir() / L"models" / L"depth-anything-v2-small" / L"q4f16";
 }
 
 std::filesystem::path modelFile() {
-    return modelDir() / L"model.onnx";
+    return modelDir() / L"model_q4f16.onnx";
 }
 
 std::filesystem::path configFile() {

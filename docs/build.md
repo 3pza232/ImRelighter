@@ -64,7 +64,7 @@ GPU 测试依赖 `assets/shaders/` 与 `tests/golden/` 的源目录路径，由 
 - DirectML 1.15.4
 - libwebp + libsharpyuv
 - ONNX Runtime 依赖 MSVC 2015–2022 运行库；干净机器需安装 VC++ Redistributable
-- 默认模型位于 `bin/models/depth-anything-v2-small/model.onnx`
+- 默认模型位于 `bin/models/depth-anything-v2-small/q4f16/model_q4f16.onnx`
 
 模型、DLL 与运行时资源由 CMake 的构建后步骤复制；不要手工只复制 exe。
 

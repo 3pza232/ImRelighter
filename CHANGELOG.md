@@ -2,6 +2,20 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的结构，版本号与 `CMakeLists.txt` 保持一致。
 
+## [0.4.2] - 2026-10-20
+
+默认模型与量化模型兼容版本。
+
+### Changed
+
+- 默认模型改为 Depth Anything V2 Small q4f16，约 19 MB；目录结构改为 `models/depth-anything-v2-small/q4f16/model_q4f16.onnx`。
+- 设置中的模型类型可显示 `fp32 / fp16 / q4 / q4f16 / bnb4 / int8`；量化模型优先根据文件名识别，再回退到 initializer 精度。
+- 模型检查在 CPU 加载失败时会再尝试 DirectML，避免可用的量化模型被误报为红色错误。
+
+### Fixed
+
+- q4、q4f16、bnb4 量化导出保持 FLOAT32/FLOAT16 输入输出时可直接尝试；int8 若依赖 `ConvInteger` 等当前 ONNX Runtime CPU 未实现的算子，会显示具体加载错误，而不是静默失败。
+
 ## [0.4.1] - 2026-10-19
 
 高光参数、灯光定位与界面细节修复版本。

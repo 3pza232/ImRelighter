@@ -3,7 +3,7 @@
 ; directory stay in sync with the current CMake build.
 
 #ifndef MyAppVersion
-#define MyAppVersion "0.4.1"
+#define MyAppVersion "0.4.2"
 #endif
 
 #ifndef MyBuildDir

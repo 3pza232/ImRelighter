@@ -2,7 +2,7 @@
 
 ImRelighter 提供两种发布形态：
 
-- **Setup 安装程序**（推荐）：`dist/ImRelighter-0.4.1-setup.exe`
+- **Setup 安装程序**（推荐）：`dist/ImRelighter-0.4.2-setup.exe`
 - **便携运行目录**：直接压缩 `build/mingw-release/bin/`
 
 两种形态使用同一份运行文件，区别只在安装、快捷方式与卸载行为。

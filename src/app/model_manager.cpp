@@ -13,8 +13,18 @@ std::filesystem::path resolveModelFile(const std::filesystem::path& directory) {
     const auto direct = directory / L"model.onnx";
     if (paths::fileExists(direct)) return direct;
 
+    const auto directVersioned = directory / L"model_q4f16.onnx";
+    if (paths::fileExists(directVersioned)) return directVersioned;
+
+    const auto versioned = directory / L"q4f16" / L"model_q4f16.onnx";
+    if (paths::fileExists(versioned)) return versioned;
+
     const auto nested = directory / L"depth-anything-v2-small" / L"model.onnx";
     if (paths::fileExists(nested)) return nested;
+
+    const auto bundled = directory / L"depth-anything-v2-small" / L"q4f16" /
+                         L"model_q4f16.onnx";
+    if (paths::fileExists(bundled)) return bundled;
     return {};
 }
 
@@ -134,20 +144,54 @@ void ModelManager::inspect() {
             result.error = std::move(error);
             return result;
         }
-        ml::OnnxSession session;
-        if (!session.load(runtime, modelFile, false, &error)) {
-            result.error = std::move(error);
-            return result;
-        }
-        result.info = session.info();
+        // Read weight types before creating the session. A quantized model can
+        // fail to load on an older ORT (for example ConvInteger), but the
+        // settings page should still be able to label it as int8/q4 rather
+        // than showing only a generic error.
         std::string weightError;
         inspectModelWeights(modelFile, result.weights, &weightError);
+        ml::OnnxSession session;
+        if (!session.load(runtime, modelFile, false, &error)) {
+            // Quantized exports may be usable only through DirectML even when
+            // the CPU EP lacks a kernel. Inspection should mirror the Auto
+            // backend instead of painting every such model red.
+            if (runtime.hasDml()) {
+                std::string dmlError;
+                if (!session.load(runtime, modelFile, true, &dmlError)) {
+                    result.error = std::move(error) +
+                                   " (DirectML: " + dmlError + ")";
+                    return result;
+                }
+            } else {
+                result.error = std::move(error);
+                return result;
+            }
+        }
+        result.info = session.info();
         return result;
     });
 }
 
 std::string ModelManager::type() const {
+    const std::string filename = path().filename().string();
+    const auto has = [&](const char* token) {
+        return filename.find(token) != std::string::npos;
+    };
+    // Quantized exports often keep float input/output, so the tensor type in
+    // the session does not reveal the weight format. Prefer the explicit
+    // filename token used by the common Hugging Face exports, then fall back
+    // to the initializer data types.
+    if (has("q4f16")) return "q4f16";
+    if (has("bnb4")) return "bnb4";
+    if (has("int8")) return "int8";
+    if (has("q4")) return "q4";
+
+    if (weights_.int8 > 0 || weights_.uint8 > 0) return "int8";
+    if (weights_.int4 > 0 || weights_.uint4 > 0) {
+        return weights_.fp16 > 0 ? "q4f16" : "q4";
+    }
     if (weights_.fp16 > weights_.fp32) return "fp16";
+    if (weights_.bf16 > 0) return "bf16";
     if (weights_.fp32 > 0) return "fp32";
     if (info_.inputType == "FLOAT16") return "fp16";
     return "fp32";

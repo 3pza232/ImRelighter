@@ -1,4 +1,4 @@
-# ImRelighter 0.4.1
+# ImRelighter 0.4.2
 
 > 让一张图拥有可编辑的光。
 
@@ -8,7 +8,7 @@ ImRelighter 是 Windows 本地的单图重打光工具：在本地用 ONNX 模�
 
 ## 功能
 
-- **本地推理**：ONNX Runtime C API，支持 CPU 与 DirectML；模型与 DLL 动态加载，缺失时可回退或给出明确提示。
+- **本地推理**：ONNX Runtime C API，支持 CPU 与 DirectML；默认 q4f16 小模型，也可选择本地 FP32/FP16 或其他兼容量化模型。
 - **物理光照**：GGX / 经典 Blinn-Phong 可切换，内置自然、人像、电影、经典四种方案，以及柔和 / ACES 色调映射。
 - **实时渲染**：深度平滑、法线、阴影 MRT、模糊、最终光照；7 种视图与拆分对比线。
 - **多任务**：PNG / JPEG / WebP，多选或拖拽打开、缩略图切换、独立参数与灯光。
@@ -21,7 +21,7 @@ ImRelighter 是 Windows 本地的单图重打光工具：在本地用 ONNX 模�
 
 ## 安装
 
-发布页提供 `ImRelighter-0.4.1-setup.exe`。安装器支持简体中文与 English，按用户安装到 `%LOCALAPPDATA%\Programs\ImRelighter`，创建开始菜单项，并可选创建桌面快捷方式。升级会复用上次选择的安装目录，保留用户模型与 `config.json`；缺失的默认模型或新增模型会补装，卸载默认保留设置与模型目录。
+发布页提供 `ImRelighter-0.4.2-setup.exe`。安装器支持简体中文与 English，按用户安装到 `%LOCALAPPDATA%\Programs\ImRelighter`，创建开始菜单项，并可选创建桌面快捷方式。升级会复用上次选择的安装目录，保留用户模型与 `config.json`；缺失的默认模型或新增模型会补装，卸载默认保留设置与模型目录。
 
 也可以直接解压运行目录使用，不写注册表。运行要求与安装器行为见 [docs/packaging.md](docs/packaging.md)。
 
@@ -70,7 +70,7 @@ cmake --build build
 powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1 -FetchVCRedist
 ```
 
-输出为 `dist/ImRelighter-0.4.1-setup.exe` 与对应 `.sha256`。
+输出为 `dist/ImRelighter-0.4.2-setup.exe` 与对应 `.sha256`。
 
 ## 运行
 
@@ -123,11 +123,11 @@ tests/       core、GPU 金图像、i18n 检查与推理基准
 
 ## 性能参考
 
-本机（512×512 合成输入，Depth Anything V2 Small，99 MB 模型）：
+本机（512×512 合成输入，Depth Anything V2 Small q4f16，约 19 MB 模型）：
 
 ```text
-CPU  479.6 ms（warmup 458.5 ms）
-DML   70.5 ms（warmup 339.3 ms）
+CPU  704.5 ms（warmup 699.8 ms）
+DML   40.4 ms（warmup 383.5 ms）
 ```
 
 数值只表示相对量级，随 CPU、GPU、驱动和模型变化。基准程序：`build/mingw-release/tests/imrelighter_inference_bench.exe`。

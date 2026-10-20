@@ -72,6 +72,11 @@ bool parseTensor(Cursor& cursor, WeightInfo& info) {
             if (!cursor.varint(type)) return false;
             if (type == 10) ++info.fp16;
             else if (type == 1) ++info.fp32;
+            else if (type == 16) ++info.bf16;
+            else if (type == 3) ++info.int8;
+            else if (type == 2) ++info.uint8;
+            else if (type == 22) ++info.int4;
+            else if (type == 21) ++info.uint4;
             else ++info.other;
             continue;
         }
