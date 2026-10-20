@@ -12,12 +12,35 @@ uniform float uAmplitude;
 uniform float uNormalStrength;
 uniform float uMaxTilt;
 uniform float uDetailStrength;
+uniform float uDenoise;
 uniform vec3 uFlips;
 
 float heightAt(ivec2 pixel) {
     ivec2 size = textureSize(uHeight, 0);
     return texelFetch(uHeight, clamp(pixel, ivec2(0), size - 1), 0).r *
            uAmplitude;
+}
+
+float medianHeight(ivec2 pixel) {
+    // A median window removes the salt-and-pepper depth steps that quantized
+    // int8 models produce without softening broad planes like a box blur.
+    float values[9];
+    int index = 0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            values[index++] = heightAt(pixel + ivec2(x, y));
+        }
+    }
+    for (int i = 1; i < 9; ++i) {
+        float value = values[i];
+        int j = i - 1;
+        while (j >= 0 && values[j] > value) {
+            values[j + 1] = values[j];
+            --j;
+        }
+        values[j + 1] = value;
+    }
+    return values[4];
 }
 
 float colorLuma(vec2 uv) {
@@ -40,11 +63,16 @@ void main() {
     ivec2 size = textureSize(uHeight, 0);
     ivec2 pixel = clamp(ivec2(floor(vUv * vec2(size))),
                         ivec2(0), size - 1);
-    float c = heightAt(pixel);
-    float l = heightAt(pixel - ivec2(1, 0));
-    float r = heightAt(pixel + ivec2(1, 0));
-    float b = heightAt(pixel - ivec2(0, 1));
-    float u = heightAt(pixel + ivec2(0, 1));
+    bool denoise = uDenoise > 0.5;
+    float c = denoise ? medianHeight(pixel) : heightAt(pixel);
+    float l = denoise ? medianHeight(pixel - ivec2(1, 0))
+                      : heightAt(pixel - ivec2(1, 0));
+    float r = denoise ? medianHeight(pixel + ivec2(1, 0))
+                      : heightAt(pixel + ivec2(1, 0));
+    float b = denoise ? medianHeight(pixel - ivec2(0, 1))
+                      : heightAt(pixel - ivec2(0, 1));
+    float u = denoise ? medianHeight(pixel + ivec2(0, 1))
+                      : heightAt(pixel + ivec2(0, 1));
 
     // Central differences are deliberate. Switching to one-sided differences
     // around noisy model edges flips the gradient between adjacent pixels and

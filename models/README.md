@@ -6,7 +6,6 @@
 models/
 └─ depth-anything-v2-small/
    ├─ LICENSE                  # Apache-2.0
-   ├─ preprocessor_config.json # 共享预处理参数
    └─ q4f16/
       ├─ model_q4f16.onnx      # 默认模型（约 19 MB）
       └─ preprocessor_config.json

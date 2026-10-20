@@ -9,7 +9,6 @@
 ```text
 models/depth-anything-v2-small/
 ├─ LICENSE
-├─ preprocessor_config.json
 └─ q4f16/
    ├─ model_q4f16.onnx
    └─ preprocessor_config.json
@@ -30,7 +29,7 @@ models/depth-anything-v2-small/
 
 ## 预处理配置
 
-优先从模型同目录或其上一级的 `preprocessor_config.json` 读取。配置可以写在顶层，也可以放在 `"preprocess": { ... }` 子对象中；两者同时存在时优先使用子对象。
+优先从模型同目录或其上一级的 `preprocessor_config.json` 读取；默认 q4f16 配置位于 `q4f16/`。配置可以写在顶层，也可以放在 `"preprocess": { ... }` 子对象中；两者同时存在时优先使用子对象。
 
 支持的字段：
 

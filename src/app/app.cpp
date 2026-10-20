@@ -371,6 +371,12 @@ void App::drawFrame() {
         }
         target->depth = std::move(inferenceResult.depth);
         target->hasDepth = true;
+        if (models_.type() == "int8") {
+            // Quantized int8 depth often carries strong per-pixel steps;
+            // enable the normal median prefilter and a stronger edge-aware
+            // smoothing pass without changing the other model profiles.
+            target->settings.smooth = std::max(target->settings.smooth, 3.0f);
+        }
         ++target->depthRevision;
         if (target == activeDocument()) {
             target->view = core::View::Lit;

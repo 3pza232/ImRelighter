@@ -419,6 +419,8 @@ void Renderer::passNormal(const core::Document& doc) {
         static_cast<float>(doc.width) / static_cast<float>(preview_.width));
     normalShader_.setFloat("uMaxTilt", 1.5f);
     normalShader_.setFloat("uDetailStrength", doc.settings.detail);
+    normalShader_.setFloat("uDenoise",
+                           doc.settings.smooth > 1.5f ? 1.0f : 0.0f);
     normalShader_.setFloat("uAmplitude",
                            std::max(doc.settings.height, 0.001f));
     normalShader_.setFloat("uNormalStrength", doc.settings.normalStrength);
