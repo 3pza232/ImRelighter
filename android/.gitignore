@@ -1,0 +1,22 @@
+# Gradle / Android local state
+.gradle/
+build/
+app/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+.kotlin/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# Output
+dist/
+
+# OS / scratch
+.DS_Store
+Thumbs.db
+*.log
+*.hprof
