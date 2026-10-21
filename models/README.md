@@ -6,14 +6,14 @@
 models/
 └─ depth-anything-v2-small/
    ├─ LICENSE                  # Apache-2.0
-   └─ q4f16/
-      ├─ model_q4f16.onnx      # 默认模型（约 19 MB）
-      └─ preprocessor_config.json
+   ├─ preprocessor_config.json
+   └─ q4/
+      └─ model_q4.onnx         # 默认模型（约 27 MB）
 ```
 
 ## 运行时
 
-- 程序默认读取 `<exe目录>/models/depth-anything-v2-small/q4f16/model_q4f16.onnx`。
+- 程序默认读取 `<exe目录>/models/depth-anything-v2-small/q4/model_q4.onnx`。
 - `preprocessor_config.json` 提供输入尺寸与归一化参数；优先读取模型同目录，找不到时回退到上一级。
 - `LICENSE` 用于许可证合规。
 - 模型目录随 CMake `POST_BUILD` 一起复制到构建产物目录。
@@ -22,7 +22,7 @@ models/
 
 ## 兼容性
 
-- 默认使用 **q4f16** 量化模型，体积小、加载快，适合作为随包默认值。
+- 默认使用 **q4** 量化模型，体积和画质均衡，适合作为随包默认值。
 - q4、q4f16、bnb4 等量化导出通常保持 FLOAT32/FLOAT16 输入输出，可以由 ONNX Runtime 直接加载。
 - int8 导出若包含 `ConvInteger`，当前 ONNX Runtime CPU 没有该实现，DirectML 上也可能得到错误结果；应用会直接拒绝并提示改用 q4/q4f16/FP16/FP32。
 - 需要更高质量时，可在设置中选择自己下载的 FP32/FP16 或兼容量化模型。

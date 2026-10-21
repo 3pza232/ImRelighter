@@ -22,7 +22,7 @@
 
 - 仅支持 1 个输入、1 个输出。
 - 输入按 NCHW `1×3×H×W` 解释；输出按单通道浮点深度解释。
-- 输入/输出支持 FLOAT32 / FLOAT16；q4f16 为默认模型，q4/bnb4 可尝试，int8 导出若包含 ConvInteger 等当前 ONNX Runtime CPU 未实现的算子会加载失败。
+- 输入/输出支持 FLOAT32 / FLOAT16；q4 为默认模型，q4f16/bnb4 可手动选择，int8 导出若包含 ConvInteger 等当前 ONNX Runtime CPU 未实现的算子会加载失败。
 - 固定输入尺寸模型只能使用与其匹配的推理分辨率。
 - 多输入/多输出模型（例如 Depth Anything V3）会在加载时被拒绝。
 - 不自动下载、转换或量化模型；模型错误由 ONNX Runtime 返回。

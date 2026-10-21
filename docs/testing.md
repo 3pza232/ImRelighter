@@ -36,7 +36,7 @@ GPU 测试在无 OpenGL 4.5 环境时返回 77，CTest 将其标记为 **SKIP**�
 
 覆盖 0 / -0、正规数、最大值、溢出到 Inf、Inf、NaN、最小次正规数与下溢，并对所有有限 half 做 `halfToFloat → floatToHalf` 往返测试。
 
-模型类型在设置中显示为 fp32 / fp16 / q4 / q4f16 / bnb4 / int8；支持 FLOAT32、FLOAT16 输入/输出。q4f16 是默认模型；q4、bnb4 可尝试；int8 若依赖 ConvInteger 等未实现算子会在加载时显示 ONNX Runtime 错误。
+模型类型在设置中显示为 fp32 / fp16 / q4 / q4f16 / bnb4 / int8；支持 FLOAT32、FLOAT16 输入/输出。q4 是默认模型；q4f16、bnb4 可手动选择；int8 若依赖 ConvInteger 等未实现算子会在加载时显示 ONNX Runtime 错误。
 
 ## 推理基准
 

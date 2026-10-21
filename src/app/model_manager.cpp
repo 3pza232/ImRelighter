@@ -13,18 +13,28 @@ std::filesystem::path resolveModelFile(const std::filesystem::path& directory) {
     const auto direct = directory / L"model.onnx";
     if (paths::fileExists(direct)) return direct;
 
-    const auto directVersioned = directory / L"model_q4f16.onnx";
+    const auto directVersioned = directory / L"model_q4.onnx";
     if (paths::fileExists(directVersioned)) return directVersioned;
 
-    const auto versioned = directory / L"q4f16" / L"model_q4f16.onnx";
+    const auto directLegacy = directory / L"model_q4f16.onnx";
+    if (paths::fileExists(directLegacy)) return directLegacy;
+
+    const auto versioned = directory / L"q4" / L"model_q4.onnx";
     if (paths::fileExists(versioned)) return versioned;
+
+    const auto versionedLegacy = directory / L"q4f16" / L"model_q4f16.onnx";
+    if (paths::fileExists(versionedLegacy)) return versionedLegacy;
 
     const auto nested = directory / L"depth-anything-v2-small" / L"model.onnx";
     if (paths::fileExists(nested)) return nested;
 
-    const auto bundled = directory / L"depth-anything-v2-small" / L"q4f16" /
-                         L"model_q4f16.onnx";
+    const auto bundled = directory / L"depth-anything-v2-small" / L"q4" /
+                         L"model_q4.onnx";
     if (paths::fileExists(bundled)) return bundled;
+
+    const auto bundledLegacy = directory / L"depth-anything-v2-small" /
+                               L"q4f16" / L"model_q4f16.onnx";
+    if (paths::fileExists(bundledLegacy)) return bundledLegacy;
     return {};
 }
 

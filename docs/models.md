@@ -2,16 +2,16 @@
 
 ## 默认模型
 
-`models/depth-anything-v2-small/q4f16/model_q4f16.onnx`，Depth Anything V2 Small 的 q4f16 量化版本，Apache-2.0。
+`models/depth-anything-v2-small/q4/model_q4.onnx`，Depth Anything V2 Small 的 q4（4-bit 权重、FP32 激活）量化版本，Apache-2.0。
 
-默认模型随构建产物分发，约 19 MB；程序不会联网下载。目录按量化档位分层，便于以后增加 `/base`、`/large` 或其他精度：
+默认模型随构建产物分发，约 27 MB；程序不会联网下载。目录按量化档位分层，每个量化目录只放模型，预处理配置统一放在模型集顶层：
 
 ```text
 models/depth-anything-v2-small/
 ├─ LICENSE
-└─ q4f16/
-   ├─ model_q4f16.onnx
-   └─ preprocessor_config.json
+├─ preprocessor_config.json
+└─ q4/
+   └─ model_q4.onnx
 ```
 
 ## 模型信息与精度
@@ -23,13 +23,13 @@ models/depth-anything-v2-small/
 - 支持 **FLOAT32** 与 **FLOAT16** 输入/输出
 - FLOAT16 输入会自动从归一化 float32 转换；输出会转回 float32
 - 转换使用 round-to-nearest-even，处理 NaN、Inf、正规数、次正规数与下溢
-- **q4 / q4f16 / bnb4** 量化导出通常保持浮点输入输出，可直接尝试；当前随包的 q4f16 已作为默认模型验证
+- **q4 / q4f16 / bnb4** 量化导出通常保持浮点输入输出，可直接尝试；当前随包的 q4 已作为默认模型验证
 - **int8** 导出通常使用 `ConvInteger`；当前随包的 ONNX Runtime CPU 没有该实现，DirectML 上也可能返回错误/异常结果。应用会直接提示改用 q4/q4f16/FP16/FP32，不把泥浆状深度当成可用结果
 - 固定输入尺寸、多输入/多输出模型仍需要额外适配
 
 ## 预处理配置
 
-优先从模型同目录或其上一级的 `preprocessor_config.json` 读取；默认 q4f16 配置位于 `q4f16/`。配置可以写在顶层，也可以放在 `"preprocess": { ... }` 子对象中；两者同时存在时优先使用子对象。
+优先从模型同目录或其上一级的 `preprocessor_config.json` 读取；默认 q4 配置位于 `models/depth-anything-v2-small/` 顶层。配置可以写在顶层，也可以放在 `"preprocess": { ... }` 子对象中；两者同时存在时优先使用子对象。
 
 支持的字段：
 

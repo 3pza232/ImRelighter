@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的结构，版本号与 `CMakeLists.txt` 保持一致。
 
+## [Unreleased]
+
+### Changed
+
+- 默认模型改为 Depth Anything V2 Small q4（4-bit 权重、FP32 激活），约 27 MB；目录结构改为 `models/depth-anything-v2-small/q4/model_q4.onnx`，`preprocessor_config.json` 放在模型目录顶层。
+- q4f16 仍作为可手动选择的兼容模型，保留类型识别与旧目录解析。
+
 ## [0.4.2] - 2026-10-20
 
 默认模型与量化模型兼容版本。

@@ -8,7 +8,7 @@ ImRelighter 是 Windows 本地的单图重打光工具：在本地用 ONNX 模�
 
 ## 功能
 
-- **本地推理**：ONNX Runtime C API，支持 CPU 与 DirectML；默认 q4f16 小模型，也可选择本地 FP32/FP16 或其他兼容量化模型。
+- **本地推理**：ONNX Runtime C API，支持 CPU 与 DirectML；默认 q4 小模型，也可选择本地 FP32/FP16 或其他兼容量化模型。
 - **物理光照**：GGX / 经典 Blinn-Phong 可切换，内置自然、人像、电影、经典四种方案，以及柔和 / ACES 色调映射。
 - **实时渲染**：深度平滑、法线、阴影 MRT、模糊、最终光照；7 种视图与拆分对比线。
 - **多任务**：PNG / JPEG / WebP，多选或拖拽打开、缩略图切换、独立参数与灯光。
@@ -123,11 +123,11 @@ tests/       core、GPU 金图像、i18n 检查与推理基准
 
 ## 性能参考
 
-本机（512×512 合成输入，Depth Anything V2 Small q4f16，约 19 MB 模型）：
+本机（512×512 合成输入，Depth Anything V2 Small q4，约 27 MB 模型）：
 
 ```text
-CPU  704.5 ms（warmup 699.8 ms）
-DML   40.4 ms（warmup 383.5 ms）
+CPU  556.1 ms（warmup 556.5 ms）
+DML   73.7 ms（warmup 348.7 ms）
 ```
 
 数值只表示相对量级，随 CPU、GPU、驱动和模型变化。基准程序：`build/mingw-release/tests/imrelighter_inference_bench.exe`。
