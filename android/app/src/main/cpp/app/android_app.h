@@ -225,6 +225,7 @@ private:
     float model_list_scroll_max_ = 0.0f;
     bool model_list_touch_scrolling_ = false;
     bool model_list_scroll_dirty_ = false;
+    bool model_list_scroll_to_end_ = false;
     bool model_list_touch_started_ = false;
     float model_list_touch_start_y_ = 0.0f;
     float model_list_touch_start_scroll_ = 0.0f;

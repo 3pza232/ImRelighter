@@ -39,6 +39,7 @@ jmethodID g_export_method = nullptr;
 AAssetManager* g_assets = nullptr;
 std::string g_files_dir;
 std::string g_model_storage_label;
+std::vector<std::string> g_pending_model_files;
 std::atomic<int> g_system_inset_top{0};
 std::atomic<int> g_system_inset_bottom{0};
 float g_density = 1.0f;
@@ -387,6 +388,11 @@ void render_thread_main() {
                         }
                         g_app->set_system_insets(g_system_inset_top.load(),
                                                  g_system_inset_bottom.load());
+                        if (!g_pending_model_files.empty()) {
+                            g_app->queue_model_files(
+                                std::move(g_pending_model_files));
+                            g_pending_model_files.clear();
+                        }
                         std::vector<uint8_t> pending;
                         int pending_width = 0;
                         int pending_height = 0;
@@ -651,6 +657,10 @@ Java_com_imrelighter_android_MainActivity_nativeRegisterModelFiles(
     std::lock_guard<std::mutex> lock(g_app_mutex);
     if (g_app) {
         g_app->queue_model_files(std::move(model_paths));
+    } else {
+        for (const std::string& path : model_paths) {
+            g_pending_model_files.push_back(path);
+        }
     }
 }
 
@@ -709,6 +719,7 @@ Java_com_imrelighter_android_MainActivity_nativeShutdown(JNIEnv* env, jobject) {
     g_assets = nullptr;
     g_files_dir.clear();
     g_model_storage_label.clear();
+    g_pending_model_files.clear();
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -234,8 +234,10 @@ std::string localizedModelDescription(const ModelInfo& model) {
                       "4-bit weights · FP32 activations · recommended");
     }
     if (model.id.rfind("file:", 0) == 0) {
-        return localizedModelType(model.type) + " · " +
-               ui::tr("本地文件", "local file");
+        const std::string filename =
+            std::filesystem::path(model.display_path).filename().string();
+        return localizedModelType(model.type) +
+               (filename.empty() ? "" : " · " + filename);
     }
     return model.description;
 }
@@ -900,6 +902,7 @@ void AndroidApp::process_queues() {
         }
         if (imported > 0) {
             // Importing a folder must not replace the user's current model.
+            model_list_scroll_to_end_ = true;
             set_status(ui::tr("已导入 ", "Imported ") + std::to_string(imported) +
                        ui::tr(" 个模型，当前选择保持不变",
                               " model(s); current selection unchanged"));
@@ -2149,6 +2152,12 @@ void AndroidApp::draw_settings(float s) {
                 ImGui::PopID();
             }
             model_list_scroll_max_ = ImGui::GetScrollMaxY();
+            if (model_list_scroll_to_end_) {
+                model_list_scroll_ = model_list_scroll_max_;
+                model_list_scroll_dirty_ = true;
+                model_list_scroll_to_end_ = false;
+                scroll_applied = true;
+            }
             if (!model_list_touch_scrolling_ && !scroll_applied) {
                 model_list_scroll_ =
                     std::clamp(ImGui::GetScrollY(), 0.0f, model_list_scroll_max_);
