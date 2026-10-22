@@ -23,6 +23,8 @@ struct ModelInfo {
     std::string name;
     std::string description;
     std::string asset_path;
+    std::string display_path;
+    std::string type;
     bool available = false;
 };
 

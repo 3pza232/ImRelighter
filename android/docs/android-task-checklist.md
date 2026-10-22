@@ -6,8 +6,8 @@ not lose requirements.
 ## Current build
 
 - Source: `android/`
-- APK: `android/dist/ImRelighterAndroid-inset-model-delete.apk`
-- SHA-256: `2B4A81FF98A8830B668386716D6868F3B2B0CF9F4984187F99F7C0618C230886`
+- APK: `android/dist/ImRelighterAndroid-model-detect.apk`
+- SHA-256: `6CDD8FC1AAFDD78CD6878F7DC42BD2D6F415B48098EDA6A8777F9DFB89C700D6`
 - Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleDebug --offline --no-daemon`
 
 ## Fixes in the current build

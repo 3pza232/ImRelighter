@@ -15,6 +15,7 @@ add_library(imrelighter SHARED
     core/model_catalog.cpp
     io/image_loader.cpp
     ml/model_config.cpp
+    ml/model_metadata.cpp
     ml/preprocess.cpp
     ml/depth_processing.cpp
     ml/inference_service.cpp

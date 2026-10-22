@@ -208,13 +208,31 @@ std::string localizedStatus(const std::string& status) {
     return status;
 }
 
+std::string localizedModelType(const std::string& type) {
+    if (type == "q4") {
+        return ui::tr("Q4 · 4-bit 权重 · FP32 激活",
+                      "Q4 · 4-bit weights · FP32 activations");
+    }
+    if (type == "q4f16") {
+        return ui::tr("Q4F16 · 4-bit 权重 · FP16 激活",
+                      "Q4F16 · 4-bit weights · FP16 activations");
+    }
+    if (type == "fp16") return "FP16";
+    if (type == "fp32") return "FP32";
+    if (type == "bf16") return "BF16";
+    if (type == "int8") return "INT8";
+    if (type == "bnb4") return "BNB4";
+    return ui::tr("未知类型", "Unknown type");
+}
+
 std::string localizedModelDescription(const ModelInfo& model) {
     if (model.id == ModelCatalog::kDefaultId) {
         return ui::tr("4-bit 权重 · FP32 激活 · 推荐",
                       "4-bit weights · FP32 activations · recommended");
     }
     if (model.id.rfind("file:", 0) == 0) {
-        return ui::tr("自定义 ONNX · 本地文件", "Custom ONNX · local file");
+        return localizedModelType(model.type) + " · " +
+               ui::tr("本地文件", "local file");
     }
     return model.description;
 }
@@ -868,18 +886,20 @@ void AndroidApp::process_queues() {
         }
     }
     if (!model_files.empty()) {
-        std::string last_id;
+        int imported = 0;
         for (const std::string& path : model_files) {
             if (!catalog_) {
                 break;
             }
-            const std::string id = catalog_->register_custom_model(files_dir_, path);
-            if (!id.empty()) {
-                last_id = id;
+            if (!catalog_->register_custom_model(files_dir_, path).empty()) {
+                ++imported;
             }
         }
-        if (!last_id.empty()) {
-            select_model(last_id);
+        if (imported > 0) {
+            // Importing a folder must not replace the user's current model.
+            set_status(ui::tr("已导入 ", "Imported ") + std::to_string(imported) +
+                       ui::tr(" 个模型，当前选择保持不变",
+                              " model(s); current selection unchanged"));
         } else {
             set_status(ui::tr("模型目录中没有可用的 ONNX 文件",
                               "No usable ONNX file was found in the model folder"));
@@ -2172,33 +2192,17 @@ void AndroidApp::draw_settings(float s) {
         }
         const ModelInfo* active = catalog_ ? catalog_->find(selected_model_) : nullptr;
         if (active != nullptr) {
-            const bool is_default = active->id == ModelCatalog::kDefaultId;
-            const std::filesystem::path model_path(active->asset_path);
-            const std::string shown_path =
-                is_default
-                    ? active->asset_path
-                    : (model_path.parent_path().filename().string() + "/" +
-                       model_path.filename().string());
-            ui::labelValueRow(ui::tr("模型文件", "Model File"), shown_path.c_str(),
+            ui::labelValueRow(ui::tr("模型文件", "Model File"),
+                              active->display_path.c_str(), 110.0f * s);
+            ui::labelValueRow(ui::tr("模型类型", "Model Type"),
+                              localizedModelType(active->type).c_str(),
                               110.0f * s);
-            ui::labelValueRow(
-                ui::tr("模型类型", "Model Type"),
-                is_default ? ui::tr("Q4 · 4-bit 权重 · FP32 激活",
-                                    "Q4 · 4-bit weights · FP32 activations")
-                           : ui::tr("自定义 ONNX · 本地文件", "Custom ONNX · local file"),
-                110.0f * s);
             ui::labelValueRow(ui::tr("状态", "Status"),
                               active->available ? ui::tr("可用", "Available")
                                                 : ui::tr("未打包", "Not bundled"),
                               110.0f * s);
         }
         ImGui::Spacing();
-        if (ui::centeredButton(ui::tr("选择模型文件", "Choose Model File"),
-                               ImVec2(ImGui::GetContentRegionAvail().x, 38.0f * s))) {
-            if (model_file_callback_) {
-                model_file_callback_();
-            }
-        }
         if (ui::centeredButton(ui::tr("恢复默认 Q4", "Restore Default Q4"),
                                ImVec2(ImGui::GetContentRegionAvail().x, 38.0f * s))) {
             reset_model();
@@ -2658,7 +2662,6 @@ void AndroidApp::select_model(const std::string& id) {
     }
     selected_model_ = id;
     catalog_->save_selection(files_dir_, id);
-    show_settings_ = false;
     set_status(ui::tr("已选择模型: ", "Model selected: ") + info->name +
                ui::tr("，请生成深度与法线", "; generate depth to continue"));
 }

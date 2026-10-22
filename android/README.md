@@ -33,10 +33,11 @@ Implemented:
   central-difference normals at depth resolution, then upscale.
 - Model settings with **q4** as the bundled default, **恢复默认 Q4**, persisted
   selection, multiple custom ONNX models, and a bounded scrollable model list.
-  Users can choose a model storage folder via SAF; the app keeps read permission,
-  mirrors all ONNX files/configs into app storage, and displays each custom model
-  by its parent folder name. Selecting a single ONNX file also copies sibling or
-  parent `preprocessor_config.json` when accessible.
+  Users choose a model storage folder via SAF; the app keeps read permission,
+  mirrors all ONNX/config files into app storage, and displays each custom model
+  by its parent folder name. Model types are detected from the exported variant
+  name plus ONNX initializer data types (q4/q4f16/fp16/fp32/int8/bf16), and
+  selecting a model keeps Settings open.
 - The phone status bar is visible; the native top bar is shifted below its inset
   and the app bottom bar is compacted to 52dp to preserve canvas space.
 - English mode covers native status text, model descriptions, settings labels,

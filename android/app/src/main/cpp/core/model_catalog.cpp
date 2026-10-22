@@ -8,6 +8,8 @@
 
 #include <filesystem>
 
+#include "ml/model_metadata.h"
+
 namespace imrelighter {
 namespace {
 
@@ -43,7 +45,32 @@ std::string displayName(const std::filesystem::path& path) {
     return name.empty() ? "自定义模型" : name;
 }
 
-void addCustomModel(std::vector<ModelInfo>& models,
+std::string originalFileName(const std::filesystem::path& path) {
+    std::string stem = path.stem().string();
+    if (stem.size() > 9 && stem[stem.size() - 9] == '_') {
+        bool hash = true;
+        for (size_t i = stem.size() - 8; i < stem.size(); ++i) {
+            const char c = stem[i];
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+                  (c >= 'A' && c <= 'F'))) {
+                hash = false;
+                break;
+            }
+        }
+        if (hash) {
+            stem.resize(stem.size() - 9);
+        }
+    }
+    return stem + path.extension().string();
+}
+
+std::string displayPath(const std::filesystem::path& path) {
+    const std::string folder = path.parent_path().filename().string();
+    const std::string file = originalFileName(path);
+    return folder.empty() ? file : folder + "/" + file;
+}
+
+void addCustomModel(std::vector<ModelInfo>& models, AAssetManager* assets,
                     const std::string& absolute_path) {
     const std::string id = customId(absolute_path);
     models.erase(std::remove_if(models.begin(), models.end(),
@@ -57,6 +84,8 @@ void addCustomModel(std::vector<ModelInfo>& models,
         displayName(path),
         "自定义 ONNX · 本地文件",
         absolute_path,
+        displayPath(path),
+        ml::detectModelType(assets, absolute_path),
         true,
     });
 }
@@ -82,6 +111,8 @@ ModelCatalog::ModelCatalog(AAssetManager* assets) : assets_(assets) {
         "q4",
         "4-bit 权重 · FP32 激活 · 推荐",
         "models/depth-anything-v2-small/q4/model_q4.onnx",
+        "models/depth-anything-v2-small/q4/model_q4.onnx",
+        "q4",
         false,
     });
     for (ModelInfo& model : models_) {
@@ -117,7 +148,7 @@ std::string ModelCatalog::register_custom_model(
         return {};
     }
 
-    addCustomModel(models_, absolute_path);
+    addCustomModel(models_, assets_, absolute_path);
     saveCustomModels(files_dir, models_);
     const std::string id = customId(absolute_path);
     __android_log_print(ANDROID_LOG_INFO, kTag,
@@ -160,7 +191,7 @@ void ModelCatalog::load_custom_model(const std::string& files_dir) {
             path.pop_back();
         }
         if (!path.empty() && fileExists(path)) {
-            addCustomModel(models_, path);
+            addCustomModel(models_, assets_, path);
         }
     }
     saveCustomModels(files_dir, models_);
