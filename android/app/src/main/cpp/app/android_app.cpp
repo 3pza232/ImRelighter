@@ -1615,10 +1615,15 @@ void AndroidApp::draw_light_markers(float s) {
     const ImVec2 size(canvas_image_max_.x - canvas_image_min_.x,
                       canvas_image_max_.y - canvas_image_min_.y);
     const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const float aspect = static_cast<float>(image_.width) /
+                         static_cast<float>(std::max(image_.height, 1));
     for (size_t i = 0; i < lights_.size(); ++i) {
         Light& light = lights_[i];
-        const float u = std::clamp(0.5f + light.position[0] / 6.0f, 0.0f, 1.0f);
-        const float v = std::clamp(0.5f - light.position[1] / 6.0f, 0.0f, 1.0f);
+        // Match the desktop world mapping: the image spans x in [-aspect,
+        // aspect] and y in [-1, 1]. Do not clamp markers to the image, so a
+        // light can be placed outside the picture.
+        const float u = 0.5f + light.position[0] / (2.0f * aspect);
+        const float v = 0.5f - light.position[1] * 0.5f;
         const ImVec2 marker(canvas_image_min_.x + u * size.x,
                             canvas_image_min_.y + v * size.y);
         const float radius = 10.0f * s;
@@ -1631,10 +1636,13 @@ void AndroidApp::draw_light_markers(float s) {
         }
         if (dragging_light_ && selected_light_ == static_cast<int>(i) &&
             ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            const float u = std::clamp((mouse.x - canvas_image_min_.x) / size.x, 0.0f, 1.0f);
-            const float v = std::clamp((mouse.y - canvas_image_min_.y) / size.y, 0.0f, 1.0f);
-            light.position[0] = std::clamp((u - 0.5f) * 6.0f, -3.0f, 3.0f);
-            light.position[1] = std::clamp((0.5f - v) * 6.0f, -3.0f, 3.0f);
+            // Keep dragging outside the image: only the control range is
+            // clamped, not the image rectangle.
+            const float u = (mouse.x - canvas_image_min_.x) / size.x;
+            const float v = (mouse.y - canvas_image_min_.y) / size.y;
+            light.position[0] =
+                std::clamp((u - 0.5f) * 2.0f * aspect, -3.0f, 3.0f);
+            light.position[1] = std::clamp((0.5f - v) * 2.0f, -3.0f, 3.0f);
         }
         const ImU32 fill = ImGui::ColorConvertFloat4ToU32(
             ImVec4(light.color[0], light.color[1], light.color[2],
@@ -1814,31 +1822,52 @@ void AndroidApp::draw_lower_panel(float s) {
             ImGui::PopID();
             ImGui::Spacing();
         }
-        if (ui::centeredButton(ui::tr("添加灯光", "Add Light"),
-                               ImVec2(ImGui::GetContentRegionAvail().x, 34.0f * s))) {
-            if (lights_.size() < 8) {
-                Light light;
-                light.id = static_cast<int>(lights_.size()) + 1;
-                light.position[0] = 0.0f;
-                light.position[1] = 0.4f;
-                light.position[2] = 2.0f;
-                lights_.push_back(light);
-                selected_light_ = static_cast<int>(lights_.size()) - 1;
-            }
+        const bool has_selected =
+            selected_light_ >= 0 && selected_light_ < static_cast<int>(lights_.size());
+        bool selected_enabled = false;
+        if (has_selected) {
+            selected_enabled = lights_[static_cast<size_t>(selected_light_)].enabled;
         }
-        if (lights_.size() > 1) {
-            if (ui::centeredButton(ui::tr("删除当前灯光", "Delete Light"),
-                                   ImVec2(ImGui::GetContentRegionAvail().x, 30.0f * s))) {
-                lights_.erase(lights_.begin() + selected_light_);
-                selected_light_ = std::min(selected_light_,
-                                           static_cast<int>(lights_.size()) - 1);
+        const float action_gap = 4.0f * s;
+        const float action_width =
+            (ImGui::GetContentRegionAvail().x - action_gap * 2.0f) / 3.0f;
+        ImGui::BeginDisabled(lights_.size() >= 8);
+        if (ui::centeredButton(ui::tr("添加", "Add"),
+                               ImVec2(action_width, 34.0f * s))) {
+            Light light;
+            int next_id = 1;
+            for (const Light& existing : lights_) {
+                next_id = std::max(next_id, existing.id + 1);
             }
+            light.id = next_id;
+            light.position[0] = 0.35f;
+            light.position[1] = 0.2f;
+            light.position[2] = 1.4f;
+            lights_.push_back(light);
+            selected_light_ = static_cast<int>(lights_.size()) - 1;
         }
-        if (selected_light_ >= 0 && selected_light_ < static_cast<int>(lights_.size())) {
+        ImGui::EndDisabled();
+        ImGui::SameLine(0.0f, action_gap);
+        ImGui::BeginDisabled(!has_selected);
+        if (ui::centeredButton(ui::tr(selected_enabled ? "关闭" : "启用",
+                                      selected_enabled ? "Disable" : "Enable"),
+                               ImVec2(action_width, 34.0f * s))) {
+            lights_[static_cast<size_t>(selected_light_)].enabled = !selected_enabled;
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine(0.0f, action_gap);
+        ImGui::BeginDisabled(lights_.size() <= 1 || !has_selected);
+        if (ui::centeredButton(ui::tr("删除", "Delete"),
+                               ImVec2(action_width, 34.0f * s))) {
+            lights_.erase(lights_.begin() + selected_light_);
+            selected_light_ = std::min(selected_light_,
+                                       static_cast<int>(lights_.size()) - 1);
+        }
+        ImGui::EndDisabled();
+        if (has_selected) {
             Light& light = lights_[static_cast<size_t>(selected_light_)];
             ImGui::Spacing();
             ui::sectionTitle(ui::tr("当前灯光", "Selected Light"));
-            ui::formCheckbox("##light_enabled", ui::tr("启用", "Enabled"), light.enabled);
             ui::formSliderFloat("##light_x", ui::tr("位置 X", "Position X"), light.position[0], -3.0f, 3.0f,
                                 "%.2f", label_width);
             ui::formSliderFloat("##light_y", ui::tr("位置 Y", "Position Y"), light.position[1], -3.0f, 3.0f,
@@ -2749,6 +2778,8 @@ bool AndroidApp::render_shadow_pass(std::string& error, bool interactive) {
     for (int half = 0; half < 2; ++half) {
         glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo_[half]);
         glViewport(0, 0, shadow_width_, shadow_height_);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
         glUseProgram(shadow_program_);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, height_texture_);
@@ -2768,9 +2799,9 @@ bool AndroidApp::render_shadow_pass(std::string& error, bool interactive) {
         int shadow_steps = std::clamp(lighting_.shadow_steps, 16, 192);
         int shadow_samples = std::clamp(lighting_.shadow_samples, 1, 8);
         if (interactive) {
-            // Keep light dragging live but cheap: quarter steps, at most two
-            // softness samples. A full-quality pass runs on release.
-            shadow_steps = std::clamp(shadow_steps / 4, 16, 64);
+            // Keep the ray length/step count at full quality so live shadows
+            // do not visibly band or pop while dragging. Only the softness
+            // sample count is reduced; release restores full samples.
             shadow_samples = std::clamp(shadow_samples / 2, 1, 2);
         }
         glUniform1i(glGetUniformLocation(shadow_program_, "uSteps"), shadow_steps);
@@ -2786,6 +2817,8 @@ bool AndroidApp::render_shadow_pass(std::string& error, bool interactive) {
         glBindVertexArray(0);
 
         glBindFramebuffer(GL_FRAMEBUFFER, blur_fbo_[half]);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
         glUseProgram(shadow_blur_program_);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, shadow_texture_[half]);
@@ -2851,6 +2884,12 @@ void AndroidApp::render_lighting(bool for_export) {
     if (!depth_ready_ || original_texture_ == 0 || lit_program_ == 0) {
         return;
     }
+    // Native passes run while ImGui is building the frame; make sure no UI
+    // render state (blend/scissor/depth) leaks into the image FBOs.
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
     // Height/normal and shadow all update while a control is dragged. The
     // shadow pass uses reduced steps/samples during interaction and a full
     // quality refresh on release, so light movement feels live without paying

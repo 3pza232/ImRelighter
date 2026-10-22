@@ -24,6 +24,8 @@ Implemented:
 - Six view modes: `原图 / 光照 / 法线 / 深度 / 阴影 / 仅光照`.
 - Desktop-style lower inspector cards for image/depth status, lighting,
   material, shadow controls, model selection, and reset.
+- One-row light actions: Add / Enable-Disable / Delete. Light markers use the
+  desktop world mapping and can be dragged outside the image bounds.
 - Top/bottom bars; the bottom bar uses a larger wrapped status font so long
   image names and error messages can occupy two lines.
 - Android document picker (`ACTION_OPEN_DOCUMENT`) with high-resolution downscaling and SurfaceView recreation recovery.
@@ -40,17 +42,17 @@ Implemented:
   `lighting.frag` for Lit/Normal/Depth/Shadow/Lighting views.
 - Render work is dirty-flag driven: idle frames reuse the lit texture; changing
   normal/depth parameters re-runs only the height/normal passes. The height
-  filter switches to a 3x3 fast kernel during a drag, and shadows use reduced
-  steps/samples while dragging then refresh at full quality on release.
-  then rebuilds at full quality on release. `preview_long_edge` caps the
-  interactive lighting target; export always renders at full image resolution.
+  filter switches to a 3x3 fast kernel during a drag; shadows keep full steps
+  but halve softness samples while dragging, then restore full samples on
+  release. `preview_long_edge` caps the interactive lighting target; export
+  always renders at full image resolution.
 - GPU height/normal/shadow/lit caches are invalidated when switching tasks, so
   each task's depth, normals, view, lights and parameters remain isolated even
   though the same GL objects are reused.
-- Dragging a light updates the shadow map live. During the drag the shadow
-  ray-march uses quarter steps and at most two softness samples; releasing the
-  light refreshes the full-quality shadow once, so movement feels immediate
-  without paying the full ray-march cost every frame.
+- Dragging a light updates the shadow map live. During the drag the ray-march
+  keeps full step count but halves the softness samples; releasing the light
+  restores full samples. Light positions use the same world-space mapping as
+  desktop and can be dragged beyond the image bounds.
 - Model settings with **q4** as the bundled default, **恢复默认 Q4**, persisted
   selection, multiple custom ONNX models, and a bounded scrollable model list.
   Users choose a model storage folder via SAF; the app keeps read permission,
