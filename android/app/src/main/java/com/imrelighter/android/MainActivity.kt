@@ -257,6 +257,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         getSharedPreferences("imrelighter", MODE_PRIVATE).edit()
                             .putString("model_storage_label", imported.first)
                             .putString("model_storage_tree_uri", treeUri.toString())
+                            .remove("model_last_document_uri")
                             .apply()
                         nativeSetModelStorage(imported.first)
                         nativeRegisterModelFiles(imported.second.toTypedArray())
@@ -281,6 +282,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 return
             }
             val uri = data?.data ?: return
+            getSharedPreferences("imrelighter", MODE_PRIVATE).edit()
+                .putString("model_last_document_uri", uri.toString())
+                .apply()
             Thread {
                 try {
                     val path = copyModelFile(uri)
@@ -742,21 +746,77 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 Intent.EXTRA_MIME_TYPES,
                 arrayOf("application/octet-stream", "application/onnx", "*/*")
             )
-            val savedTree = getSharedPreferences("imrelighter", MODE_PRIVATE)
-                .getString("model_storage_tree_uri", null)
-            if (savedTree != null) {
-                try {
-                    val treeUri = Uri.parse(savedTree)
-                    val documentId = DocumentsContract.getTreeDocumentId(treeUri)
-                    val initialUri =
-                        DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
-                    putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
-                } catch (error: Throwable) {
-                    Log.w(TAG, "could not use model storage as initial picker folder", error)
-                }
+            initialModelPickerUri()?.let { initialUri ->
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
             }
         }
         startActivityForResult(intent, REQUEST_PICK_MODEL)
+    }
+
+    private fun initialModelPickerUri(): Uri? {
+        val preferences = getSharedPreferences("imrelighter", MODE_PRIVATE)
+        val savedTree = preferences.getString("model_storage_tree_uri", null)
+        if (savedTree != null) {
+            try {
+                val treeUri = Uri.parse(savedTree)
+                val treeDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+                findFirstOnnx(treeUri, treeDocumentId, 0)?.let { return it }
+                return DocumentsContract.buildDocumentUriUsingTree(
+                    treeUri, treeDocumentId
+                )
+            } catch (error: Throwable) {
+                Log.w(TAG, "could not resolve model storage folder", error)
+            }
+        }
+        val lastModel = preferences.getString("model_last_document_uri", null)
+        if (lastModel != null) {
+            try {
+                val uri = Uri.parse(lastModel)
+                if (DocumentsContract.isDocumentUri(this, uri)) {
+                    return uri
+                }
+            } catch (error: Throwable) {
+                Log.w(TAG, "could not use last model document", error)
+            }
+        }
+        return null
+    }
+
+    private fun findFirstOnnx(treeUri: Uri, documentId: String, depth: Int): Uri? {
+        if (depth > 3) return null
+        return try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                treeUri, documentId
+            )
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            val directories = mutableListOf<String>()
+            var found: Uri? = null
+            contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val id = cursor.getString(0) ?: continue
+                    val name = cursor.getString(1) ?: continue
+                    val mime = cursor.getString(2) ?: ""
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        directories.add(id)
+                    } else if (name.lowercase().endsWith(".onnx")) {
+                        found = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                        break
+                    }
+                }
+            }
+            if (found != null) return found
+            for (directoryId in directories) {
+                findFirstOnnx(treeUri, directoryId, depth + 1)?.let { return it }
+            }
+            null
+        } catch (error: Throwable) {
+            Log.w(TAG, "could not scan model storage folder", error)
+            null
+        }
     }
 
     private fun readImageBytes(uri: Uri): ByteArray? {
