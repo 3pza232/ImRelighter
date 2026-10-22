@@ -39,11 +39,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         private const val MAX_IMAGE_BYTES = 64 * 1024 * 1024
         private const val REQUEST_OPEN_IMAGE = 1001
         private const val REQUEST_PICK_MODEL = 1002
+        private const val REQUEST_PICK_MODEL_FOLDER = 1003
     }
 
     private lateinit var surfaceView: SurfaceView
     private var pickerInFlight = false
     private var modelPickerInFlight = false
+    private var modelFolderPickerInFlight = false
     private var nativeInitialized = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,6 +98,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         try {
             nativeInit(this, assets, filesDir.absolutePath, resources.displayMetrics.density)
             nativeInitialized = true
+            val savedStorage = getSharedPreferences("imrelighter", MODE_PRIVATE)
+                .getString("model_storage_label", null)
+                ?: tr("应用内部存储", "App storage")
+            nativeSetModelStorage(savedStorage)
             Log.i(TAG, "native initialized")
         } catch (error: Throwable) {
             Log.e(TAG, "native initialization failed", error)
@@ -112,7 +118,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 append(": ")
                 append(error.message)
             }
-            append("\n\n请通过 adb logcat 查看 ImRelighterAndroid 日志。")
+            append(tr("\n\n请通过 adb logcat 查看 ImRelighterAndroid 日志。", "\n\nCheck adb logcat tag ImRelighterAndroid for details."))
         }
         val view = TextView(this).apply {
             setBackgroundColor(Color.rgb(17, 19, 24))
@@ -141,20 +147,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun enableImmersiveMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
+            // Keep the status bar readable, but reclaim the navigation-bar
+            // area for the canvas. Content is inset below the status bar.
+            window.setDecorFitsSystemWindows(true)
             val controller = window.insetsController ?: return
-            controller.hide(WindowInsets.Type.systemBars())
+            controller.show(WindowInsets.Type.statusBars())
+            controller.hide(WindowInsets.Type.navigationBars())
             controller.systemBarsBehavior =
                 WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.setSystemBarsAppearance(
+                0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+            )
         } else {
             @Suppress("DEPRECATION")
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility =
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
         }
     }
 
@@ -206,6 +216,47 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_MODEL_FOLDER) {
+            modelFolderPickerInFlight = false
+            if (resultCode != RESULT_OK) {
+                return
+            }
+            val treeUri = data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(
+                    treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (error: Throwable) {
+                Log.w(TAG, "could not persist tree permission", error)
+            }
+            Thread {
+                try {
+                    val imported = importModelFolder(treeUri)
+                    if (imported.second.isEmpty()) {
+                        showTransientMessage(tr("文件夹中没有 .onnx 模型",
+                                                "No .onnx model found in the folder"))
+                        return@Thread
+                    }
+                    runOnUiThread {
+                        getSharedPreferences("imrelighter", MODE_PRIVATE).edit()
+                            .putString("model_storage_label", imported.first).apply()
+                        nativeSetModelStorage(imported.first)
+                        nativeRegisterModelFiles(imported.second.toTypedArray())
+                        showTransientMessage(
+                            tr("已导入 ${imported.second.size} 个模型",
+                               "Imported ${imported.second.size} model(s)")
+                        )
+                    }
+                } catch (error: Throwable) {
+                    Log.e(TAG, "model folder import failed", error)
+                    showTransientMessage(
+                        tr("模型文件夹导入失败: ${error.message ?: error.javaClass.simpleName}",
+                           "Model folder import failed: ${error.message ?: error.javaClass.simpleName}")
+                    )
+                }
+            }.start()
+            return
+        }
         if (requestCode == REQUEST_PICK_MODEL) {
             modelPickerInFlight = false
             if (resultCode != RESULT_OK) {
@@ -216,17 +267,17 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 try {
                     val path = copyModelFile(uri)
                     if (path == null) {
-                        showTransientMessage("模型文件复制失败")
+                        showTransientMessage(tr("模型文件复制失败", "Failed to copy model file"))
                         return@Thread
                     }
                     runOnUiThread {
                         nativeSelectModelFile(path)
-                        showTransientMessage("已选择模型文件")
+                        showTransientMessage(tr("已选择模型文件", "Model file selected"))
                     }
                 } catch (error: Throwable) {
                     Log.e(TAG, "model file selection failed", error)
                     showTransientMessage(
-                        "模型文件选择失败: ${error.message ?: error.javaClass.simpleName}"
+                        tr("模型文件选择失败: ", "Model file selection failed: ") + (error.message ?: error.javaClass.simpleName)
                     )
                 }
             }.start()
@@ -247,7 +298,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 val bitmap = decodeSelectedImage(uri)
                 if (bitmap == null) {
                     Log.e(TAG, "selected image could not be decoded")
-                    showTransientMessage("图片解码失败，请换一张图片")
+                    showTransientMessage(tr("图片解码失败，请换一张图片", "Image decode failed; choose another image"))
                     return@Thread
                 }
                 val width = bitmap.width
@@ -255,10 +306,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 nativeOpenBitmap(bitmap)
                 Log.i(TAG, "image selected: ${width}x${height} RGBA bitmap")
                 bitmap.recycle()
-                showTransientMessage("已导入 ${width} × ${height} 图片")
+                showTransientMessage(tr("已导入 ${width} × ${height} 图片", "Imported ${width} × ${height} image"))
             } catch (error: Throwable) {
                 Log.e(TAG, "failed to read selected image", error)
-                showTransientMessage("图片导入失败: ${error.message ?: error.javaClass.simpleName}")
+                showTransientMessage(tr("图片导入失败: ", "Image import failed: ") + (error.message ?: error.javaClass.simpleName))
             }
         }.start()
     }
@@ -307,7 +358,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "model.onnx"
         if (!displayName.lowercase().endsWith(".onnx")) {
-            throw IllegalArgumentException("请选择 .onnx 模型文件")
+            throw IllegalArgumentException(tr("请选择 .onnx 模型文件", "Choose an .onnx model file"))
         }
         val safeName = sanitizeFilePart(displayName).ifBlank { "model.onnx" }
         val stem = safeName.substringBeforeLast('.').ifBlank { "model" }
@@ -330,7 +381,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
         if (temp.length() == 0L) {
             temp.delete()
-            throw IllegalArgumentException("模型文件为空")
+            throw IllegalArgumentException(tr("模型文件为空", "The model file is empty"))
         }
         val suffix = digest.digest().joinToString("") { "%02x".format(it) }.take(8)
         val target = File(targetDir, "${stem}_${suffix}.onnx")
@@ -444,6 +495,111 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
+    private fun tr(chinese: String, english: String): String {
+        return if (isEnglish()) english else chinese
+    }
+
+    private fun isEnglish(): Boolean {
+        return try {
+            File(filesDir, "language.txt").readText().trim() == "1"
+        } catch (error: Throwable) {
+            false
+        }
+    }
+
+    private fun importModelFolder(treeUri: Uri): Pair<String, List<String>> {
+        val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+        val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocumentId)
+        val rootName = queryDisplayName(rootUri) ?: "models"
+        val safeRoot = sanitizeFilePart(rootName).ifBlank { "models" }
+        val targetRoot = File(filesDir, "models/$safeRoot")
+        if (targetRoot.exists()) {
+            targetRoot.deleteRecursively()
+        }
+        if (!targetRoot.exists() && !targetRoot.mkdirs()) {
+            throw IllegalStateException("cannot create model storage directory")
+        }
+        val models = mutableListOf<String>()
+        copyDocumentTree(treeUri, rootDocumentId, targetRoot, models, 0)
+        Log.i(TAG, "model folder imported: $safeRoot (${models.size} models)")
+        return safeRoot to models
+    }
+
+    private fun copyDocumentTree(
+        treeUri: Uri,
+        documentId: String,
+        targetDir: File,
+        models: MutableList<String>,
+        depth: Int
+    ) {
+        if (depth > 5) return
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+            treeUri, documentId
+        )
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+        contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val childId = cursor.getString(0) ?: continue
+                val name = cursor.getString(1) ?: continue
+                val mime = cursor.getString(2) ?: ""
+                val safeName = sanitizeFilePart(name).ifBlank { "model.onnx" }
+                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    val childDir = File(targetDir, safeName)
+                    if (childDir.mkdirs() || childDir.exists()) {
+                        copyDocumentTree(treeUri, childId, childDir, models, depth + 1)
+                    }
+                    continue
+                }
+                if (!name.lowercase().endsWith(".onnx") && name != "preprocessor_config.json") {
+                    continue
+                }
+                val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+                if (name == "preprocessor_config.json") {
+                    copyDocumentToFile(childUri, targetDir, name, false)
+                } else {
+                    val copied = copyDocumentToFile(childUri, targetDir, name, true)
+                    if (copied != null) {
+                        models.add(copied.absolutePath)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun copyDocumentToFile(
+        uri: Uri, targetDir: File, name: String, addHash: Boolean
+    ): File? {
+        val temp = File(targetDir, ".tmp-${System.nanoTime()}")
+        val digest = MessageDigest.getInstance("SHA-256")
+        val input = contentResolver.openInputStream(uri) ?: return null
+        input.use { source ->
+            temp.outputStream().use { output ->
+                DigestOutputStream(output, digest).use { digestOutput ->
+                    source.copyTo(digestOutput)
+                }
+            }
+        }
+        if (temp.length() == 0L) {
+            temp.delete()
+            return null
+        }
+        val target = if (addHash) {
+            val suffix = digest.digest().joinToString("") { "%02x".format(it) }.take(8)
+            File(targetDir, "${name.substringBeforeLast('.')}_${suffix}.onnx")
+        } else {
+            File(targetDir, name)
+        }
+        if (!temp.renameTo(target)) {
+            temp.copyTo(target, overwrite = true)
+            temp.delete()
+        }
+        return target
+    }
+
     private fun showTransientMessage(message: String) {
         runOnUiThread {
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
@@ -484,13 +640,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         values.put(MediaStore.Images.Media.IS_PENDING, 0)
                         contentResolver.update(uri, values, null, null)
                         Log.i(TAG, "export saved: $uri")
-                        showTransientMessage("已导出到相册")
+                        showTransientMessage(tr("已导出到相册", "Exported to gallery"))
                     }
                 } else {
                     MediaStore.Images.Media.insertImage(
                         contentResolver, bitmap, name, "ImRelighter export")
                     Log.i(TAG, "export saved: $name")
-                    showTransientMessage("已导出到相册")
+                    showTransientMessage(tr("已导出到相册", "Exported to gallery"))
                 }
                 bitmap.recycle()
             } catch (error: Exception) {
@@ -536,6 +692,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         runOnUiThread {
             launchModelPicker()
         }
+    }
+
+    fun requestModelFolderFromNative() {
+        runOnUiThread {
+            launchModelFolderPicker()
+        }
+    }
+
+    private fun launchModelFolderPicker() {
+        if (modelFolderPickerInFlight) {
+            return
+        }
+        modelFolderPickerInFlight = true
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, REQUEST_PICK_MODEL_FOLDER)
     }
 
     private fun launchModelPicker() {
@@ -596,6 +770,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private external fun nativeOpenBitmap(bitmap: Bitmap)
     private external fun nativeSelectModel(modelId: String)
     private external fun nativeSelectModelFile(path: String)
+    private external fun nativeRegisterModelFiles(paths: Array<String>)
+    private external fun nativeSetModelStorage(label: String)
     private external fun nativeResetModel()
     private external fun nativeClearSession()
     private external fun nativeShutdown()

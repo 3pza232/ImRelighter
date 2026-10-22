@@ -38,11 +38,14 @@ public:
     void queue_image_rgba(std::vector<uint8_t> rgba, int width, int height);
     void queue_model(const std::string& id);
     void queue_model_file(const std::string& absolute_path);
+    void queue_model_files(std::vector<std::string> absolute_paths);
+    void set_model_storage_label(const std::string& label);
     void queue_reset_model();
     bool handle_back();
 
     void set_open_image_callback(std::function<void()> callback);
     void set_model_file_callback(std::function<void()> callback);
+    void set_model_folder_callback(std::function<void()> callback);
     void set_export_callback(
         std::function<void(const std::vector<uint8_t>&, int, int, const std::string&)>
             callback);
@@ -136,7 +139,7 @@ private:
     bool depth_ready_ = false;
     uint64_t generation_ = 0;
     bool busy_ = false;
-    std::string status_ = "正在准备…";
+    std::string status_ = "Preparing…";
 
     std::vector<Task> tasks_;
     int active_task_ = -1;
@@ -241,10 +244,14 @@ private:
     bool has_pending_image_rgba_ = false;
     std::string pending_model_;
     std::string pending_model_file_;
+    std::vector<std::string> pending_model_files_;
+    std::string pending_model_storage_label_;
     bool pending_reset_ = false;
 
     std::function<void()> open_image_callback_;
     std::function<void()> model_file_callback_;
+    std::function<void()> model_folder_callback_;
+    std::string model_storage_label_ = "应用内部存储";
     std::function<void(const std::vector<uint8_t>&, int, int, const std::string&)>
         export_callback_;
     std::chrono::steady_clock::time_point last_frame_time_;

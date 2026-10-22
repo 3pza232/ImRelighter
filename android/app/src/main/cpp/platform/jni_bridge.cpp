@@ -33,9 +33,11 @@ JavaVM* g_vm = nullptr;
 jobject g_activity = nullptr;
 jmethodID g_request_open_method = nullptr;
 jmethodID g_request_model_method = nullptr;
+jmethodID g_request_model_folder_method = nullptr;
 jmethodID g_export_method = nullptr;
 AAssetManager* g_assets = nullptr;
 std::string g_files_dir;
+std::string g_model_storage_label;
 float g_density = 1.0f;
 
 std::mutex g_app_mutex;
@@ -100,6 +102,30 @@ void notify_model_file() {
         attached = true;
     }
     env->CallVoidMethod(g_activity, g_request_model_method);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+    if (attached) {
+        g_vm->DetachCurrentThread();
+    }
+}
+
+void notify_model_folder() {
+    if (g_vm == nullptr || g_activity == nullptr ||
+        g_request_model_folder_method == nullptr) {
+        return;
+    }
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_EDETACHED) {
+        if (g_vm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+            LOGE("failed to attach render thread for model folder callback");
+            return;
+        }
+        attached = true;
+    }
+    env->CallVoidMethod(g_activity, g_request_model_folder_method);
     if (env->ExceptionCheck()) {
         env->ExceptionDescribe();
         env->ExceptionClear();
@@ -344,6 +370,7 @@ void render_thread_main() {
                         g_assets, g_files_dir, g_density);
                     g_app->set_open_image_callback([]() { notify_open_image(); });
                     g_app->set_model_file_callback([]() { notify_model_file(); });
+                    g_app->set_model_folder_callback([]() { notify_model_folder(); });
                     g_app->set_export_callback(
                         [](const std::vector<uint8_t>& rgba, int w, int h,
                            const std::string& kind) { notify_export(rgba, w, h, kind); });
@@ -352,6 +379,9 @@ void render_thread_main() {
                         LOGE("AndroidApp initialize failed: %s", error.c_str());
                         g_app.reset();
                     } else {
+                        if (!g_model_storage_label.empty()) {
+                            g_app->set_model_storage_label(g_model_storage_label);
+                        }
                         std::vector<uint8_t> pending;
                         int pending_width = 0;
                         int pending_height = 0;
@@ -439,6 +469,8 @@ Java_com_imrelighter_android_MainActivity_nativeInit(
         env->GetMethodID(activity_class, "requestOpenImageFromNative", "()V");
     g_request_model_method =
         env->GetMethodID(activity_class, "requestModelFileFromNative", "()V");
+    g_request_model_folder_method =
+        env->GetMethodID(activity_class, "requestModelFolderFromNative", "()V");
     g_export_method = env->GetMethodID(activity_class, "onExportReady",
                                        "([BIILjava/lang/String;)V");
     env->DeleteLocalRef(activity_class);
@@ -447,6 +479,9 @@ Java_com_imrelighter_android_MainActivity_nativeInit(
     }
     if (g_request_model_method == nullptr) {
         LOGE("requestModelFileFromNative() not found");
+    }
+    if (g_request_model_folder_method == nullptr) {
+        LOGE("requestModelFolderFromNative() not found");
     }
     if (g_export_method == nullptr) {
         LOGE("onExportReady() not found");
@@ -595,6 +630,37 @@ Java_com_imrelighter_android_MainActivity_nativeSelectModelFile(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_imrelighter_android_MainActivity_nativeRegisterModelFiles(
+    JNIEnv* env, jobject, jobjectArray paths) {
+    std::vector<std::string> model_paths;
+    if (paths != nullptr) {
+        const jsize count = env->GetArrayLength(paths);
+        for (jsize i = 0; i < count; ++i) {
+            auto value = static_cast<jstring>(env->GetObjectArrayElement(paths, i));
+            model_paths.push_back(jstring_to_string(env, value));
+            if (value != nullptr) {
+                env->DeleteLocalRef(value);
+            }
+        }
+    }
+    std::lock_guard<std::mutex> lock(g_app_mutex);
+    if (g_app) {
+        g_app->queue_model_files(std::move(model_paths));
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_imrelighter_android_MainActivity_nativeSetModelStorage(
+    JNIEnv* env, jobject, jstring label) {
+    const std::string value = jstring_to_string(env, label);
+    std::lock_guard<std::mutex> lock(g_app_mutex);
+    g_model_storage_label = value;
+    if (g_app) {
+        g_app->set_model_storage_label(value);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_imrelighter_android_MainActivity_nativeResetModel(JNIEnv*, jobject) {
     std::lock_guard<std::mutex> lock(g_app_mutex);
     if (g_app) {
@@ -622,9 +688,11 @@ Java_com_imrelighter_android_MainActivity_nativeShutdown(JNIEnv* env, jobject) {
     }
     g_request_open_method = nullptr;
     g_request_model_method = nullptr;
+    g_request_model_folder_method = nullptr;
     g_export_method = nullptr;
     g_assets = nullptr;
     g_files_dir.clear();
+    g_model_storage_label.clear();
 }
 
 extern "C" JNIEXPORT void JNICALL

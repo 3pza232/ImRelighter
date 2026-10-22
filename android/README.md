@@ -33,9 +33,14 @@ Implemented:
   central-difference normals at depth resolution, then upscale.
 - Model settings with **q4** as the bundled default, **恢复默认 Q4**, persisted
   selection, multiple custom ONNX models, and a bounded scrollable model list.
-  Custom model display names use the model's parent folder; model files and
-  `preprocessor_config.json` are copied into an app-owned folder, with config
-  lookup falling back from the model directory to its parent.
+  Users can choose a model storage folder via SAF; the app keeps read permission,
+  mirrors all ONNX files/configs into app storage, and displays each custom model
+  by its parent folder name. Selecting a single ONNX file also copies sibling or
+  parent `preprocessor_config.json` when accessible.
+- The phone status bar is visible; content is inset below it and the app bottom
+  bar is compacted to preserve canvas space.
+- English mode covers native status text, model descriptions, settings labels,
+  errors, busy indicators, export menu and Kotlin toasts.
 - Preprocessing follows the desktop JSON processor semantics (`size`,
   `ensure_multiple_of`, resize/filter, rescale, normalize, mean/std and
   `output.invert`); q4 reads the bundled top-level config.

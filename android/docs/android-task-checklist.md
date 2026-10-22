@@ -6,8 +6,8 @@ not lose requirements.
 ## Current build
 
 - Source: `android/`
-- APK: `android/dist/ImRelighterAndroid-model-config.apk`
-- SHA-256: `2F7B3AFB29394A87792D0BF3F8E7360FFF858DA107100EEF7013B6A895DCEA6B`
+- APK: `android/dist/ImRelighterAndroid-folder-i18n.apk`
+- SHA-256: `1712329F0EDFCC8D94F150BBC2275FE8ED63FF572C9030C9869C29F10AA524D8`
 - Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleDebug --offline --no-daemon`
 
 ## Fixes in the current build
@@ -68,6 +68,13 @@ not lose requirements.
 - Model handling: custom model names come from the parent folder; multiple
   custom models persist; the model list is bounded and scrollable; Settings
   shows a short relative path and custom type instead of raw ids.
+- Model storage: SAF folder picker persists read permission and mirrors every
+  ONNX/config file in the chosen tree; the folder name is shown in Settings.
+- System UI: the phone status bar is visible, content is inset below it, and the
+  app bottom status bar is reduced to 60dp.
+- English mode: native statuses, busy/error/export strings, model descriptions,
+  settings labels and Kotlin toasts are localized; legacy Chinese statuses are
+  translated when the language is switched at runtime.
 - Preprocessing: `preprocessor_config.json` is resolved from the model folder,
   then its parent, for both bundled assets and local custom models, using the
   same JSON semantics as desktop.

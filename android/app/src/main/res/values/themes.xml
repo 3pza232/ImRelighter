@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ImRelighterAndroid" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+    <style name="Theme.ImRelighterAndroid" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowFullscreen">false</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:colorAccent">#E8B36A</item>

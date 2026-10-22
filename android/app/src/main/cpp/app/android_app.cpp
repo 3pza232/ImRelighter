@@ -153,6 +153,72 @@ float scaleFactor(float density) {
     return std::max(density, 1.0f);
 }
 
+std::string localizedImportedName(const std::string& name) {
+    if (ui::language() == ui::Language::English && name == "相册图片") {
+        return "Gallery image";
+    }
+    return name;
+}
+
+std::string localizedStatus(const std::string& status) {
+    if (ui::language() != ui::Language::English) {
+        return status;
+    }
+    if (status == "请导入图片") return "Import an image";
+    if (status == "深度与法线已生成") return "Depth and normals generated";
+    if (status == "正在生成深度与法线…") return "Generating depth and normals…";
+    if (status == "图片已导入，请点击“生成深度与法线”") {
+        return "Image imported. Tap Generate Depth & Normals.";
+    }
+    if (status == "图片数据无效") return "Invalid image data";
+    if (status == "所选模型不可用") return "Selected model is unavailable";
+    if (status == "没有可导出的结果") return "Nothing to export";
+    if (status == "导出失败：纹理不可用") return "Export failed: texture unavailable";
+    if (status == "已导出") return "Exported";
+    if (status == "自定义模型文件不可用") return "Custom model file is unavailable";
+    if (status == "模型目录中没有可用的 ONNX 文件") {
+        return "No usable ONNX file was found in the model folder";
+    }
+    if (status.rfind("已达到任务导入上限（", 0) == 0) {
+        return "Task limit reached. Delete a task or raise the limit in Settings.";
+    }
+    if (status.rfind("已选择模型: ", 0) == 0) {
+        return "Model selected. Generate depth to continue.";
+    }
+    const auto replace_prefix = [&](const char* chinese, const char* english) {
+        const std::string prefix(chinese);
+        if (status.rfind(prefix, 0) == 0) {
+            return std::string(english) + status.substr(prefix.size());
+        }
+        return std::string();
+    };
+    for (const auto& pair : {
+             std::pair<const char*, const char*>{"图片打开失败: ", "Image open failed: "},
+             {"纹理上传失败: ", "Texture upload failed: "},
+             {"原图纹理上传失败: ", "Original texture upload failed: "},
+             {"推理失败: ", "Inference failed: "},
+             {"未知模型: ", "Unknown model: "},
+             {"模型未内置: ", "Model is not available: "},
+             {"已选择模型: ", "Model selected: "}}) {
+        const std::string replaced = replace_prefix(pair.first, pair.second);
+        if (!replaced.empty()) {
+            return replaced;
+        }
+    }
+    return status;
+}
+
+std::string localizedModelDescription(const ModelInfo& model) {
+    if (model.id == ModelCatalog::kDefaultId) {
+        return ui::tr("4-bit 权重 · FP32 激活 · 推荐",
+                      "4-bit weights · FP32 activations · recommended");
+    }
+    if (model.id.rfind("file:", 0) == 0) {
+        return ui::tr("自定义 ONNX · 本地文件", "Custom ONNX · local file");
+    }
+    return model.description;
+}
+
 ImU32 contrastTextFor(const float rgb[3], float alpha = 1.0f) {
     const float luma = 0.2126f * rgb[0] + 0.7152f * rgb[1] + 0.0722f * rgb[2];
     if (luma > 0.58f) {
@@ -222,7 +288,8 @@ bool AndroidApp::initialize(std::string& error) {
             }
         }
         initialized_ = true;
-        set_status("请导入图片");
+        model_storage_label_ = ui::tr("应用内部存储", "App storage");
+        set_status(ui::tr("请导入图片", "Import an image"));
         return true;
     } catch (const std::exception& exception) {
         error = exception.what();
@@ -332,14 +399,29 @@ void AndroidApp::queue_model(const std::string& id) {
     std::lock_guard<std::mutex> lock(queue_mutex_);
     pending_model_ = id;
     pending_model_file_.clear();
+    pending_model_files_.clear();
     pending_reset_ = false;
 }
 
 void AndroidApp::queue_model_file(const std::string& absolute_path) {
     std::lock_guard<std::mutex> lock(queue_mutex_);
     pending_model_file_ = absolute_path;
+    pending_model_files_.clear();
     pending_model_.clear();
     pending_reset_ = false;
+}
+
+void AndroidApp::queue_model_files(std::vector<std::string> absolute_paths) {
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    pending_model_files_ = std::move(absolute_paths);
+    pending_model_file_.clear();
+    pending_model_.clear();
+    pending_reset_ = false;
+}
+
+void AndroidApp::set_model_storage_label(const std::string& label) {
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    pending_model_storage_label_ = label;
 }
 
 void AndroidApp::queue_reset_model() {
@@ -368,6 +450,10 @@ void AndroidApp::set_model_file_callback(std::function<void()> callback) {
     model_file_callback_ = std::move(callback);
 }
 
+void AndroidApp::set_model_folder_callback(std::function<void()> callback) {
+    model_folder_callback_ = std::move(callback);
+}
+
 void AndroidApp::set_export_callback(
     std::function<void(const std::vector<uint8_t>&, int, int, const std::string&)>
         callback) {
@@ -383,6 +469,8 @@ void AndroidApp::process_queues() {
     bool has_image_rgba = false;
     std::string model;
     std::string model_file;
+    std::vector<std::string> model_files;
+    std::string model_storage_label;
     bool reset = false;
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);
@@ -406,8 +494,16 @@ void AndroidApp::process_queues() {
         pending_model_.clear();
         model_file = pending_model_file_;
         pending_model_file_.clear();
+        model_files = std::move(pending_model_files_);
+        pending_model_files_.clear();
+        model_storage_label = pending_model_storage_label_;
+        pending_model_storage_label_.clear();
         reset = pending_reset_;
         pending_reset_ = false;
+    }
+
+    if (!model_storage_label.empty()) {
+        model_storage_label_ = model_storage_label;
     }
 
     if (ImGui::GetCurrentContext() != nullptr) {
@@ -702,9 +798,9 @@ void AndroidApp::process_queues() {
         ImageData image;
         std::string error;
         if (io::decodeImage(image_bytes.data(), image_bytes.size(), image, error)) {
-            set_image(image, "相册图片");
+            set_image(image, ui::tr("相册图片", "Gallery image"));
         } else {
-            set_status("图片打开失败: " + error);
+            set_status(ui::tr("图片打开失败: ", "Image open failed: ") + error);
         }
     }
     if (has_image_rgba && image_width > 0 && image_height > 0 &&
@@ -713,7 +809,7 @@ void AndroidApp::process_queues() {
         image.width = image_width;
         image.height = image_height;
         image.rgba = std::move(image_rgba);
-        set_image(image, "相册图片");
+        set_image(image, ui::tr("相册图片", "Gallery image"));
     }
     if (!model.empty()) {
         select_model(model);
@@ -728,7 +824,25 @@ void AndroidApp::process_queues() {
         if (!custom_id.empty()) {
             select_model(custom_id);
         } else {
-            set_status("自定义模型文件不可用");
+            set_status(ui::tr("自定义模型文件不可用", "Custom model file is unavailable"));
+        }
+    }
+    if (!model_files.empty()) {
+        std::string last_id;
+        for (const std::string& path : model_files) {
+            if (!catalog_) {
+                break;
+            }
+            const std::string id = catalog_->register_custom_model(files_dir_, path);
+            if (!id.empty()) {
+                last_id = id;
+            }
+        }
+        if (!last_id.empty()) {
+            select_model(last_id);
+        } else {
+            set_status(ui::tr("模型目录中没有可用的 ONNX 文件",
+                              "No usable ONNX file was found in the model folder"));
         }
     }
 }
@@ -761,7 +875,7 @@ void AndroidApp::poll_inference() {
                 }
                 busy_ = false;
                 if (!uploaded) {
-                    set_status("纹理上传失败: " + error);
+                    set_status(ui::tr("纹理上传失败: ", "Texture upload failed: ") + error);
                 } else {
                     if (view_ == ViewMode::Original) {
                         // The first generated result is shown immediately in
@@ -769,7 +883,7 @@ void AndroidApp::poll_inference() {
                         view_ = ViewMode::Lit;
                         task.view = ViewMode::Lit;
                     }
-                    set_status("深度与法线已生成");
+                    set_status(ui::tr("深度与法线已生成", "Depth and normals generated"));
                 }
             }
             break;
@@ -786,14 +900,14 @@ void AndroidApp::poll_inference() {
                 if (active_task_ >= 0 &&
                     &task == &tasks_[static_cast<size_t>(active_task_)]) {
                     busy_ = false;
-                    set_status("推理失败: " + error);
+                    set_status(ui::tr("推理失败: ", "Inference failed: ") + error);
                 }
                 break;
             }
         }
         if (!matched && error_generation == generation_) {
             busy_ = false;
-            set_status("推理失败: " + error);
+            set_status(ui::tr("推理失败: ", "Inference failed: ") + error);
         }
     }
 }
@@ -897,7 +1011,7 @@ void AndroidApp::draw_ui(float s) {
 
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     const float top_height = 58.0f * s;
-    const float bottom_height = 72.0f * s;
+    const float bottom_height = 60.0f * s;
     const float body_height = std::max(0.0f, display.y - top_height - bottom_height);
 
     draw_top_bar(s);
@@ -936,7 +1050,7 @@ void AndroidApp::draw_ui(float s) {
             ImVec2(display.x * 0.5f - 118.0f * s, display.y - bottom_height - 66.0f * s),
             ImVec2(display.x * 0.5f + 118.0f * s, display.y - bottom_height - 26.0f * s),
             IM_COL32(22, 26, 34, 232), 18.0f * s);
-        const char* text = "正在生成深度与法线…";
+        const char* text = ui::tr("正在生成深度与法线…", "Generating depth and normals…");
         const ImVec2 text_size = ImGui::CalcTextSize(text);
         ImGui::GetForegroundDrawList()->AddText(
             ImVec2(display.x * 0.5f - text_size.x * 0.5f,
@@ -1097,7 +1211,7 @@ void AndroidApp::draw_task_drawer(float s) {
                                  start.y + 10.0f * s),
                           ImGui::GetColorU32(active ? ui::palette().accent
                                                     : ui::palette().text),
-                          task.name.c_str());
+                          localizedImportedName(task.name).c_str());
             draw->AddText(ImVec2(thumb_min.x + thumb + 7.0f * s,
                                  start.y + 32.0f * s),
                           ImGui::GetColorU32(ui::palette().muted),
@@ -1554,10 +1668,10 @@ void AndroidApp::draw_lower_panel(float s) {
                 lighting_.tone_map = static_cast<ToneMap>(i);
             }
         }
-        ui::formCheckbox("##base_mode", "仅使用重打光结果", lighting_.base_mode);
+        ui::formCheckbox("##base_mode", ui::tr("仅使用重打光结果", "Use relit result only"), lighting_.base_mode);
         ui::formSliderFloat("##mix", ui::tr("效果混合", "Effect Mix"), lighting_.mix, 0.0f, 1.0f,
                             "%.2f", label_width);
-        ui::formSliderFloat("##exposure", "曝光 EV", lighting_.exposure, -5.0f, 5.0f,
+        ui::formSliderFloat("##exposure", ui::tr("曝光 EV", "Exposure EV"), lighting_.exposure, -5.0f, 5.0f,
                             "%.2f", label_width);
     }
 
@@ -1614,7 +1728,7 @@ void AndroidApp::draw_lower_panel(float s) {
         const ModelInfo* model = catalog_ ? catalog_->find(selected_model_) : nullptr;
         if (model != nullptr) {
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
-            ImGui::TextDisabled("%s", model->description.c_str());
+            ImGui::TextDisabled("%s", localizedModelDescription(*model).c_str());
             ImGui::PopTextWrapPos();
         }
         if (ui::centeredButton(ui::tr("恢复默认 Q4", "Restore Default Q4"),
@@ -1622,10 +1736,11 @@ void AndroidApp::draw_lower_panel(float s) {
             reset_model();
         }
         if (depth_ready_) {
-            ImGui::TextDisabled("推理 %.1f ms · %d × %d", depth_.inference_ms,
+            ImGui::TextDisabled(ui::tr("推理 %.1f ms · %d × %d", "Inference %.1f ms · %d × %d"), depth_.inference_ms,
                                 depth_.width, depth_.height);
         }
-        ImGui::TextDisabled("状态：%s", status_.c_str());
+        ImGui::TextDisabled(ui::tr("状态：%s", "Status: %s"),
+                            localizedStatus(status_).c_str());
     }
 
     ImGui::Spacing();
@@ -1655,14 +1770,16 @@ void AndroidApp::draw_lower_panel(float s) {
 
 void AndroidApp::draw_bottom_bar(float s) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ui::palette().panel);
-    ImGui::BeginChild("##bottombar", ImVec2(0.0f, 72.0f * s), ImGuiChildFlags_Borders,
+    ImGui::BeginChild("##bottombar", ImVec2(0.0f, 60.0f * s), ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
-        ui::FontScale micro(0.90f);
-        ImGui::SetCursorPos(ImVec2(12.0f * s, 5.0f * s));
+        ui::FontScale micro(0.84f);
+        ImGui::SetCursorPos(ImVec2(12.0f * s, 3.0f * s));
         ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 12.0f * s);
         const std::string line =
-            (image_.valid() ? image_name_ : ui::tr("未导入图片", "No image")) + " · " + status_;
+            (image_.valid() ? localizedImportedName(image_name_)
+                            : ui::tr("未导入图片", "No image")) +
+            " · " + localizedStatus(status_);
         ImGui::TextDisabled("%s", line.c_str());
         ImGui::PopTextWrapPos();
     }
@@ -1678,17 +1795,17 @@ void AndroidApp::draw_export_menu(float s) {
     if (!ImGui::BeginPopup("##export_menu")) {
         return;
     }
-    ImGui::TextDisabled("导出当前结果");
+    ImGui::TextDisabled("%s", ui::tr("导出当前结果", "Export current result"));
     ImGui::Separator();
     const struct {
         const char* label;
         ViewMode mode;
     } items[] = {
-        {"光照", ViewMode::Lit},
-        {"法线", ViewMode::Normal},
-        {"深度", ViewMode::Depth},
-        {"阴影", ViewMode::Shadow},
-        {"仅光照", ViewMode::Lighting},
+        {ui::tr("光照", "Lit"), ViewMode::Lit},
+        {ui::tr("法线", "Normal"), ViewMode::Normal},
+        {ui::tr("深度", "Depth"), ViewMode::Depth},
+        {ui::tr("阴影", "Shadow"), ViewMode::Shadow},
+        {ui::tr("仅光照", "Lighting"), ViewMode::Lighting},
     };
     for (const auto& item : items) {
         if (ImGui::MenuItem(item.label)) {
@@ -1700,7 +1817,7 @@ void AndroidApp::draw_export_menu(float s) {
 
 void AndroidApp::export_image(ViewMode mode) {
     if (!depth_ready_ || !image_.valid() || export_callback_ == nullptr) {
-        set_status("没有可导出的结果");
+        set_status(ui::tr("没有可导出的结果", "Nothing to export"));
         return;
     }
     export_busy_ = true;
@@ -1731,7 +1848,7 @@ void AndroidApp::export_image(ViewMode mode) {
     }
     if (source_texture == 0 || width <= 0 || height <= 0) {
         export_busy_ = false;
-        set_status("导出失败：纹理不可用");
+        set_status(ui::tr("导出失败：纹理不可用", "Export failed: texture unavailable"));
         return;
     }
 
@@ -1750,7 +1867,7 @@ void AndroidApp::export_image(ViewMode mode) {
 
     export_callback_(pixels, width, height, kind);
     export_busy_ = false;
-    set_status("已导出");
+    set_status(ui::tr("已导出", "Exported"));
 }
 
 void AndroidApp::draw_settings(float s) {
@@ -1880,6 +1997,14 @@ void AndroidApp::draw_settings(float s) {
         ImGui::Spacing();
     } else if (settings_tab_ == 1) {
         ui::sectionTitle(ui::tr("深度模型", "Depth Model"));
+        ui::labelValueRow(ui::tr("模型存储位置", "Model Storage"),
+                          model_storage_label_.c_str(), 110.0f * s);
+        if (ui::centeredButton(ui::tr("选择模型文件夹", "Choose Model Folder"),
+                               ImVec2(ImGui::GetContentRegionAvail().x, 36.0f * s))) {
+            if (model_folder_callback_) {
+                model_folder_callback_();
+            }
+        }
         if (catalog_ != nullptr) {
             const auto& models = catalog_->models();
             const ImGuiStyle& style = ImGui::GetStyle();
@@ -1916,7 +2041,8 @@ void AndroidApp::draw_settings(float s) {
                                    "%s", model.name.c_str());
                 {
                     ui::FontScale small(0.72f);
-                    ImGui::TextDisabled("%s%s", model.description.c_str(),
+                    const std::string description = localizedModelDescription(model);
+                    ImGui::TextDisabled("%s%s", description.c_str(),
                                         model.available
                                             ? ""
                                             : ui::tr("（未打包）", " (not bundled)"));
@@ -2292,7 +2418,7 @@ void AndroidApp::activate_task(int index) {
     std::string error;
     if (!upload_texture(original_texture_, image_.width, image_.height, image_.rgba,
                         true, error)) {
-        set_status("原图纹理上传失败: " + error);
+        set_status(ui::tr("原图纹理上传失败: ", "Original texture upload failed: ") + error);
         return;
     }
     if (depth_ready_ && depth_.width > 0 && depth_.height > 0) {
@@ -2305,9 +2431,9 @@ void AndroidApp::activate_task(int index) {
         view_ = ViewMode::Original;
     }
     if (depth_ready_) {
-        set_status("深度与法线已生成");
+        set_status(ui::tr("深度与法线已生成", "Depth and normals generated"));
     } else {
-        set_status("图片已导入，请点击“生成深度与法线”");
+        set_status(ui::tr("图片已导入，请点击“生成深度与法线”", "Image imported. Tap Generate Depth & Normals."));
     }
 }
 
@@ -2331,7 +2457,7 @@ void AndroidApp::delete_task(int index) {
         delete_texture(original_texture_);
         delete_texture(depth_texture_);
         delete_texture(normal_texture_);
-        set_status("请导入图片");
+        set_status(ui::tr("请导入图片", "Import an image"));
         return;
     }
     if (index < active_task_) {
@@ -2344,12 +2470,14 @@ void AndroidApp::delete_task(int index) {
 
 void AndroidApp::set_image(const ImageData& image, const std::string& name) {
     if (!image.valid()) {
-        set_status("图片数据无效");
+        set_status(ui::tr("图片数据无效", "Invalid image data"));
         return;
     }
     if (static_cast<int>(tasks_.size()) >= max_tasks_) {
-        set_status("已达到任务导入上限（" + std::to_string(max_tasks_) +
-                   " 个），请先删除任务或在设置中调整上限");
+        set_status(ui::tr("已达到任务导入上限（", "Task limit reached (") +
+                   std::to_string(max_tasks_) +
+                   ui::tr(" 个），请先删除任务或在设置中调整上限",
+                          " tasks). Delete a task or raise the limit in Settings."));
         return;
     }
     store_active_task();
@@ -2384,7 +2512,7 @@ void AndroidApp::submit_inference() {
     }
     const ModelInfo* info = catalog_->find(selected_model_);
     if (info == nullptr || !info->available) {
-        set_status("所选模型不可用");
+        set_status(ui::tr("所选模型不可用", "Selected model is unavailable"));
         return;
     }
     generation_ = next_generation_++;
@@ -2398,7 +2526,7 @@ void AndroidApp::submit_inference() {
         task.depth_ready = false;
         task.depth = DepthResult{};
     }
-    set_status("正在生成深度与法线…");
+    set_status(ui::tr("正在生成深度与法线…", "Generating depth and normals…"));
     inference_->submit(image_, info->id, info->asset_path, generation_);
 }
 
@@ -2433,8 +2561,10 @@ void AndroidApp::set_status(const std::string& status) {
 
 void AndroidApp::request_open_image() {
     if (static_cast<int>(tasks_.size()) >= max_tasks_) {
-        set_status("已达到任务导入上限（" + std::to_string(max_tasks_) +
-                   " 个），请先删除任务或在设置中调整上限");
+        set_status(ui::tr("已达到任务导入上限（", "Task limit reached (") +
+                   std::to_string(max_tasks_) +
+                   ui::tr(" 个），请先删除任务或在设置中调整上限",
+                          " tasks). Delete a task or raise the limit in Settings."));
         return;
     }
     if (open_image_callback_) {
