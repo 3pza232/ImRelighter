@@ -25,8 +25,6 @@ ImRelighter Android 是桌面版 ImRelighter 的独立移动端实现：在手�
 
 ![深度视图](images/depth.png)
 
-![阴影步进](images/shadow-steps.png)
-
 ## 当前状态
 
 - 支持 Android 8.0（API 26）及以上、OpenGL ES 3.1；APK 包含 `arm64-v8a` 与 `x86_64`。

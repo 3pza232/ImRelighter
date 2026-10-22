@@ -39,17 +39,18 @@ Implemented:
   with ray-march + edge-aware blur, and a GLSL ES port of desktop
   `lighting.frag` for Lit/Normal/Depth/Shadow/Lighting views.
 - Render work is dirty-flag driven: idle frames reuse the lit texture; changing
-  normal/depth parameters re-runs only the height/normal passes; the expensive
-  shadow ray-march is deferred while a control is being dragged and refreshed on
-  release. The height filter also switches to a 3x3 fast kernel during a drag,
+  normal/depth parameters re-runs only the height/normal passes. The height
+  filter switches to a 3x3 fast kernel during a drag, and shadows use reduced
+  steps/samples while dragging then refresh at full quality on release.
   then rebuilds at full quality on release. `preview_long_edge` caps the
   interactive lighting target; export always renders at full image resolution.
 - GPU height/normal/shadow/lit caches are invalidated when switching tasks, so
   each task's depth, normals, view, lights and parameters remain isolated even
   though the same GL objects are reused.
-- Shadow controls include **显示阴影步进 / Show Shadow Steps**, which binds the
-  raw ray-march visibility maps instead of the edge-aware blurred maps. It is
-  off by default, per-task, and only changes the lighting sample source.
+- Dragging a light updates the shadow map live. During the drag the shadow
+  ray-march uses quarter steps and at most two softness samples; releasing the
+  light refreshes the full-quality shadow once, so movement feels immediate
+  without paying the full ray-march cost every frame.
 - Model settings with **q4** as the bundled default, **恢复默认 Q4**, persisted
   selection, multiple custom ONNX models, and a bounded scrollable model list.
   Users choose a model storage folder via SAF; the app keeps read permission,

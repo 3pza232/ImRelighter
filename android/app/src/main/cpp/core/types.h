@@ -85,7 +85,6 @@ struct LightingSettings {
     float wrap_light = 0.20f;
 
     bool shadow_enabled = true;
-    bool show_shadow_steps = false;
     float shadow_bias = 0.007f;
     float shadow_softness = 0.035f;
 

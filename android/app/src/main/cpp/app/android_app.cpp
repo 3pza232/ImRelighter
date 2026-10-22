@@ -1289,11 +1289,9 @@ void AndroidApp::draw_ui(float s) {
     if (shadow_changed) {
         shadow_dirty_ = true;
     }
-    // Shadows are the most expensive pass. Keep the last valid map while a
-    // control is being dragged, then refresh it once on release.
     const bool now_interacting = ImGui::IsAnyItemActive();
     if (interaction_active_ && !now_interacting) {
-        // Refresh the interactive height preview at full kernel quality.
+        // Refresh the interactive preview at full height/shadow quality.
         height_dirty_ = true;
         normal_dirty_ = true;
         shadow_dirty_ = true;
@@ -1885,8 +1883,6 @@ void AndroidApp::draw_lower_panel(float s) {
                             0.0001f, 0.2f, "%.4f", label_width);
         ui::formSliderFloat("##shadow_soft", ui::tr("阴影柔和", "Shadow Softness"), lighting_.shadow_softness,
                             0.0f, 0.5f, "%.3f", label_width);
-        ui::formCheckbox("##show_shadow_steps", ui::tr("显示阴影步进", "Show Shadow Steps"),
-                         lighting_.show_shadow_steps);
         ui::formSliderInt("##shadow_steps", ui::tr("阴影步数", "Shadow Steps"), lighting_.shadow_steps,
                           16, 192, label_width);
         ui::formSliderInt("##shadow_samples", ui::tr("采样数", "Samples"), lighting_.shadow_samples,
@@ -2729,7 +2725,7 @@ bool AndroidApp::ensure_shadow_targets(int width, int height, std::string& error
     return true;
 }
 
-bool AndroidApp::render_shadow_pass(std::string& error) {
+bool AndroidApp::render_shadow_pass(std::string& error, bool interactive) {
     if (shadow_program_ == 0 || shadow_blur_program_ == 0 || shadow_vao_ == 0 ||
         height_texture_ == 0 || original_texture_ == 0) {
         error = "shadow pass inputs unavailable";
@@ -2769,10 +2765,16 @@ bool AndroidApp::render_shadow_pass(std::string& error) {
                     lighting_.shadow_softness);
         glUniform1i(glGetUniformLocation(shadow_program_, "uLightCount"), light_count);
         glUniform1i(glGetUniformLocation(shadow_program_, "uLightBase"), half * 4);
-        glUniform1i(glGetUniformLocation(shadow_program_, "uSteps"),
-                    std::clamp(lighting_.shadow_steps, 16, 192));
-        glUniform1i(glGetUniformLocation(shadow_program_, "uSamples"),
-                    std::clamp(lighting_.shadow_samples, 1, 8));
+        int shadow_steps = std::clamp(lighting_.shadow_steps, 16, 192);
+        int shadow_samples = std::clamp(lighting_.shadow_samples, 1, 8);
+        if (interactive) {
+            // Keep light dragging live but cheap: quarter steps, at most two
+            // softness samples. A full-quality pass runs on release.
+            shadow_steps = std::clamp(shadow_steps / 4, 16, 64);
+            shadow_samples = std::clamp(shadow_samples / 2, 1, 2);
+        }
+        glUniform1i(glGetUniformLocation(shadow_program_, "uSteps"), shadow_steps);
+        glUniform1i(glGetUniformLocation(shadow_program_, "uSamples"), shadow_samples);
         glUniform1i(glGetUniformLocation(shadow_program_, "uShadowsEnabled"),
                     lighting_.shadow_enabled ? 1 : 0);
         glUniform3fv(glGetUniformLocation(shadow_program_, "uLightPos"), 8,
@@ -2849,10 +2851,10 @@ void AndroidApp::render_lighting(bool for_export) {
     if (!depth_ready_ || original_texture_ == 0 || lit_program_ == 0) {
         return;
     }
-    const bool allow_heavy = for_export || !interaction_active_;
-    // The height/normal passes are cheap enough to update during a drag, which
-    // keeps smooth/invert/line-assist feedback live. Only the expensive shadow
-    // ray-march is deferred until the finger is released.
+    // Height/normal and shadow all update while a control is dragged. The
+    // shadow pass uses reduced steps/samples during interaction and a full
+    // quality refresh on release, so light movement feels live without paying
+    // the full ray-march cost every frame.
     if (height_dirty_) {
         std::string height_error;
         if (render_depth_pass(height_error)) {
@@ -2891,9 +2893,10 @@ void AndroidApp::render_lighting(bool for_export) {
     }
 
     bool shadow_ok = shadow_pass_ready_;
-    if (lighting_.shadow_enabled && shadow_dirty_ && allow_heavy) {
+    const bool interactive_shadow = interaction_active_ && !for_export;
+    if (lighting_.shadow_enabled && shadow_dirty_) {
         std::string shadow_error;
-        shadow_ok = render_shadow_pass(shadow_error);
+        shadow_ok = render_shadow_pass(shadow_error, interactive_shadow);
         if (shadow_ok) {
             shadow_dirty_ = false;
         } else {
@@ -2910,11 +2913,9 @@ void AndroidApp::render_lighting(bool for_export) {
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, height_texture_);
     glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, lighting_.show_shadow_steps ? shadow_texture_[0]
-                                                             : blur_texture_[0]);
+    glBindTexture(GL_TEXTURE_2D, blur_texture_[0]);
     glActiveTexture(GL_TEXTURE4);
-    glBindTexture(GL_TEXTURE_2D, lighting_.show_shadow_steps ? shadow_texture_[1]
-                                                             : blur_texture_[1]);
+    glBindTexture(GL_TEXTURE_2D, blur_texture_[1]);
 
     glUniform1i(glGetUniformLocation(lit_program_, "uColor"), 0);
     glUniform1i(glGetUniformLocation(lit_program_, "uNormal"), 1);

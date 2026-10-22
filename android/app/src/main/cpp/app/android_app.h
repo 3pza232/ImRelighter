@@ -117,7 +117,7 @@ private:
     bool render_normal_pass(std::string& error);
     bool initialize_shadow_pass(std::string& error);
     bool ensure_shadow_targets(int width, int height, std::string& error);
-    bool render_shadow_pass(std::string& error);
+    bool render_shadow_pass(std::string& error, bool interactive = false);
     void ensure_lighting_target(int width, int height);
     void render_lighting(bool for_export = false);
     bool upload_texture(GLuint& texture, int width, int height,

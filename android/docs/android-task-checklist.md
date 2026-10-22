@@ -7,7 +7,7 @@ not lose requirements.
 
 - Source: `android/`
 - APK: `android/dist/ImRelighterAndroid-debug.apk`
-- SHA-256: `A54F1B94037F7E5579CBC09F5D4D79E9B623BAD1A92F9512AF667544DC2A3157`
+- SHA-256: `4D441D778D5C1CEB42595E51CE10C0025B8F08DC7E166918ED75B21F532D305E`
 - Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleDebug --offline --no-daemon`
 
 ## Fixes in the current build
@@ -37,9 +37,9 @@ not lose requirements.
 - Task activation invalidates the shared height/normal/shadow/lit GPU caches,
   so switching generated tasks cannot show another task's depth/height map.
   Per-task view, base mode, lights and parameters were runtime-verified.
-- Shadow settings include a per-task `显示阴影步进 / Show Shadow Steps` toggle.
-  It binds raw ray-march visibility maps (hard/stepped edges) instead of the
-  blurred maps; default off. Emulator-verified on/off visible difference.
+- Dragging a light now updates the shadow map live. The interactive pass uses
+  quarter steps and at most two samples; release triggers one full-quality
+  shadow refresh. Emulator-verified live movement before release.
 - Formal Android documentation added under `android/docs/` (overview,
   architecture, build, usage, models, testing, packaging, limitations, ui-kit);
   the old `android/docs/design/` folder was removed.
