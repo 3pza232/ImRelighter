@@ -31,7 +31,7 @@ not lose requirements.
 | --- | --- | --- |
 | 1 | Theme and language switching in Settings | Implemented and persisted (`theme.txt`, `language.txt`); main UI translated, status strings still mostly Chinese |
 | 2 | Lower-panel sliders must drag by grabbing the knob | Implemented; emulator-tested with ambient slider |
-| 3 | Lighting/normal/depth/shadow/lighting-only must follow desktop algorithms | Partial; multi-light shader exists, true height-field shadow pass not ported |
+| 3 | Lighting/normal/depth/shadow/lighting-only must follow desktop algorithms | Implemented GPU normal pass, height-field shadow maps + blur, and lighting pass; visual parity under validation |
 | 4 | Export must not be vertically flipped and must show success feedback | Implemented; verified export path previously, needs final orientation regression |
 | 5 | Only manual "generate depth & normals"; no auto inference after install/resume | Implemented; tasks restore without auto inference |
 | 6 | Multi-task list like desktop; importing a new image must not replace the previous task | Implemented: task vector, thumbnails, switching, per-task depth/lights/material/view; close button and 8-task scroll validated on emulator; session-only |

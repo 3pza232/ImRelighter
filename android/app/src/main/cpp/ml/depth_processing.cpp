@@ -96,6 +96,7 @@ bool buildDepthAndNormal(const std::vector<float>& raw_depth, int raw_width,
     result.height = target_height;
     result.depth_min = minimum;
     result.depth_max = maximum;
+    result.normalized_depth = resized;
     result.depth_rgba.resize(resized.size() * 4);
     for (size_t i = 0; i < resized.size(); ++i) {
         const uint8_t value = static_cast<uint8_t>(

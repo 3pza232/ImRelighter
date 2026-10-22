@@ -110,6 +110,12 @@ private:
 
     bool initialize_imgui(std::string& error);
     bool initialize_lighting(std::string& error);
+    bool initialize_normal_pass(std::string& error);
+    bool ensure_normal_target(int width, int height, std::string& error);
+    bool render_normal_pass(std::string& error);
+    bool initialize_shadow_pass(std::string& error);
+    bool ensure_shadow_targets(int width, int height, std::string& error);
+    bool render_shadow_pass(std::string& error);
     void ensure_lighting_target(int width, int height);
     void render_lighting();
     bool upload_texture(GLuint& texture, int width, int height,
@@ -162,6 +168,23 @@ private:
     GLuint original_texture_ = 0;
     GLuint depth_texture_ = 0;
     GLuint normal_texture_ = 0;
+    GLuint height_texture_ = 0;
+    GLuint normal_fbo_ = 0;
+    GLuint normal_program_ = 0;
+    GLuint normal_vao_ = 0;
+    int normal_width_ = 0;
+    int normal_height_ = 0;
+    bool normal_pass_ready_ = false;
+    GLuint shadow_texture_[2] = {0, 0};
+    GLuint shadow_fbo_[2] = {0, 0};
+    GLuint blur_texture_[2] = {0, 0};
+    GLuint blur_fbo_[2] = {0, 0};
+    GLuint shadow_program_ = 0;
+    GLuint shadow_blur_program_ = 0;
+    GLuint shadow_vao_ = 0;
+    int shadow_width_ = 0;
+    int shadow_height_ = 0;
+    bool shadow_pass_ready_ = false;
     GLuint lit_texture_ = 0;
     GLuint lit_fbo_ = 0;
     GLuint lit_program_ = 0;

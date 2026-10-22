@@ -33,6 +33,7 @@ struct DepthResult {
     int height = 0;
     std::vector<uint8_t> depth_rgba;
     std::vector<uint8_t> normal_rgba;
+    std::vector<float> normalized_depth;
     float depth_min = 0.0f;
     float depth_max = 0.0f;
     double inference_ms = 0.0;
@@ -67,7 +68,7 @@ enum class ToneMap {
 struct Light {
     int id = 1;
     float position[3] = {-0.6f, 0.65f, 1.6f};
-    float color[3] = {1.0f, 0.94f, 0.84f};
+    float color[3] = {1.0f, 0.941f, 0.847f};
     float intensity = 1.8f;
     float range = 3.0f;
     bool enabled = true;
@@ -78,7 +79,7 @@ struct Light {
 
 struct LightingSettings {
     float ambient = 0.40f;
-    float ambient_color[3] = {0.75f, 0.77f, 0.80f};
+    float ambient_color[3] = {0.752941f, 0.768627f, 0.8f};
     float wrap_light = 0.20f;
 
     bool shadow_enabled = true;

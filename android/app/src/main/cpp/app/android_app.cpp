@@ -15,6 +15,8 @@
 #include <vector>
 
 #include "app/lighting_shader.h"
+#include "app/shadow_shader.h"
+#include "app/normal_shader.h"
 #include "imgui_impl_opengl3.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
@@ -293,6 +295,12 @@ bool AndroidApp::initialize(std::string& error) {
         if (!initialize_lighting(error)) {
             return false;
         }
+        if (!initialize_normal_pass(error)) {
+            return false;
+        }
+        if (!initialize_shadow_pass(error)) {
+            return false;
+        }
         {
             std::ifstream theme_file(std::filesystem::path(files_dir_) / "theme.txt");
             int theme = 0;
@@ -337,7 +345,46 @@ void AndroidApp::shutdown() {
     delete_texture(original_texture_);
     delete_texture(depth_texture_);
     delete_texture(normal_texture_);
+    delete_texture(height_texture_);
     delete_texture(lit_texture_);
+    if (normal_fbo_ != 0) {
+        glDeleteFramebuffers(1, &normal_fbo_);
+        normal_fbo_ = 0;
+    }
+    if (normal_program_ != 0) {
+        glDeleteProgram(normal_program_);
+        normal_program_ = 0;
+    }
+    if (normal_vao_ != 0) {
+        glDeleteVertexArrays(1, &normal_vao_);
+        normal_vao_ = 0;
+    }
+    for (int i = 0; i < 2; ++i) {
+        delete_texture(shadow_texture_[i]);
+        delete_texture(blur_texture_[i]);
+        if (shadow_fbo_[i] != 0) {
+            glDeleteFramebuffers(1, &shadow_fbo_[i]);
+            shadow_fbo_[i] = 0;
+        }
+        if (blur_fbo_[i] != 0) {
+            glDeleteFramebuffers(1, &blur_fbo_[i]);
+            blur_fbo_[i] = 0;
+        }
+    }
+    if (shadow_program_ != 0) {
+        glDeleteProgram(shadow_program_);
+        shadow_program_ = 0;
+    }
+    if (shadow_blur_program_ != 0) {
+        glDeleteProgram(shadow_blur_program_);
+        shadow_blur_program_ = 0;
+    }
+    if (shadow_vao_ != 0) {
+        glDeleteVertexArrays(1, &shadow_vao_);
+        shadow_vao_ = 0;
+    }
+    shadow_pass_ready_ = false;
+    shadow_width_ = shadow_height_ = 0;
     if (lit_fbo_ != 0) {
         glDeleteFramebuffers(1, &lit_fbo_);
         lit_fbo_ = 0;
@@ -935,9 +982,17 @@ void AndroidApp::poll_inference() {
                                                 depth_.height, depth_.depth_rgba,
                                                 false, error);
                 if (uploaded) {
-                    uploaded = upload_texture(normal_texture_, depth_.width,
-                                              depth_.height, depth_.normal_rgba,
-                                              false, error);
+                    std::string normal_error;
+                    uploaded = render_normal_pass(normal_error);
+                    if (!uploaded) {
+                        // Keep a CPU fallback for devices without R32F support.
+                        uploaded = upload_texture(normal_texture_, depth_.width,
+                                                  depth_.height, depth_.normal_rgba,
+                                                  false, error);
+                        if (!uploaded) {
+                            error = normal_error + " / " + error;
+                        }
+                    }
                 }
                 busy_ = false;
                 if (!uploaded) {
@@ -1407,12 +1462,11 @@ void AndroidApp::draw_canvas(float s) {
     GLuint texture = original_texture_;
     ImVec2 uv0(0.0f, 0.0f);
     ImVec2 uv1(1.0f, 1.0f);
-    if (view_ == ViewMode::Depth && depth_ready_) {
-        texture = depth_texture_;
-    } else if (view_ == ViewMode::Normal && depth_ready_) {
-        texture = normal_texture_;
-    } else if ((view_ == ViewMode::Lit || view_ == ViewMode::Shadow ||
-                view_ == ViewMode::Lighting) && depth_ready_) {
+    if ((view_ == ViewMode::Normal || view_ == ViewMode::Depth ||
+         view_ == ViewMode::Lit || view_ == ViewMode::Shadow ||
+         view_ == ViewMode::Lighting) && depth_ready_) {
+        // The desktop renderer produces every non-original view through the
+        // same lighting/composite shader, including normal and depth previews.
         render_lighting();
         texture = lit_texture_;
     }
@@ -1917,25 +1971,15 @@ void AndroidApp::export_image(ViewMode mode) {
     int height = image_.height;
     std::string kind;
 
-    if (mode == ViewMode::Normal) {
-        source_texture = normal_texture_;
-        width = depth_.width;
-        height = depth_.height;
-        kind = "normal";
-    } else if (mode == ViewMode::Depth) {
-        source_texture = depth_texture_;
-        width = depth_.width;
-        height = depth_.height;
-        kind = "depth";
-    } else {
-        view_ = mode;
-        render_lighting();
-        view_ = previous_view;
-        source_texture = lit_texture_;
-        kind = mode == ViewMode::Shadow ? "shadow"
-               : mode == ViewMode::Lighting ? "lighting"
-                                            : "lit";
-    }
+    view_ = mode;
+    render_lighting();
+    view_ = previous_view;
+    source_texture = lit_texture_;
+    kind = mode == ViewMode::Normal  ? "normal"
+           : mode == ViewMode::Depth ? "depth"
+           : mode == ViewMode::Shadow ? "shadow"
+           : mode == ViewMode::Lighting ? "lighting"
+                                        : "lit";
     if (source_texture == 0 || width <= 0 || height <= 0) {
         export_busy_ = false;
         set_status(ui::tr("导出失败：纹理不可用", "Export failed: texture unavailable"));
@@ -2271,6 +2315,287 @@ bool AndroidApp::initialize_lighting(std::string& error) {
     return true;
 }
 
+bool AndroidApp::initialize_normal_pass(std::string& error) {
+    normal_program_ =
+        linkProgram(kFullscreenVertexShader, kNormalFragmentShaderEs, error);
+    if (normal_program_ == 0) {
+        return false;
+    }
+    glGenVertexArrays(1, &normal_vao_);
+    return true;
+}
+
+bool AndroidApp::ensure_normal_target(int width, int height, std::string& error) {
+    if (normal_fbo_ != 0 && height_texture_ != 0 && normal_texture_ != 0 &&
+        normal_width_ == width && normal_height_ == height) {
+        return true;
+    }
+    if (normal_fbo_ != 0) {
+        glDeleteFramebuffers(1, &normal_fbo_);
+        normal_fbo_ = 0;
+    }
+    if (height_texture_ != 0) {
+        glDeleteTextures(1, &height_texture_);
+        height_texture_ = 0;
+    }
+    if (normal_texture_ != 0) {
+        glDeleteTextures(1, &normal_texture_);
+        normal_texture_ = 0;
+    }
+
+    glGenTextures(1, &height_texture_);
+    glBindTexture(GL_TEXTURE_2D, height_texture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, width, height, 0, GL_RED, GL_FLOAT,
+                 nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glGenTextures(1, &normal_texture_);
+    glBindTexture(GL_TEXTURE_2D, normal_texture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenFramebuffers(1, &normal_fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, normal_fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           normal_texture_, 0);
+    const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        error = "normal framebuffer incomplete";
+        glDeleteFramebuffers(1, &normal_fbo_);
+        normal_fbo_ = 0;
+        return false;
+    }
+    normal_width_ = width;
+    normal_height_ = height;
+    return true;
+}
+
+bool AndroidApp::render_normal_pass(std::string& error) {
+    if (normal_program_ == 0 || normal_vao_ == 0 ||
+        depth_.normalized_depth.size() !=
+            static_cast<size_t>(image_.width) * static_cast<size_t>(image_.height)) {
+        error = "normal pass inputs unavailable";
+        return false;
+    }
+    if (!ensure_normal_target(image_.width, image_.height, error)) {
+        return false;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, height_texture_);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image_.width, image_.height, GL_RED,
+                    GL_FLOAT, depth_.normalized_depth.data());
+
+    glBindFramebuffer(GL_FRAMEBUFFER, normal_fbo_);
+    glViewport(0, 0, image_.width, image_.height);
+    glUseProgram(normal_program_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, height_texture_);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, original_texture_);
+    glUniform1i(glGetUniformLocation(normal_program_, "uHeight"), 0);
+    glUniform1i(glGetUniformLocation(normal_program_, "uColor"), 1);
+    glUniform2f(glGetUniformLocation(normal_program_, "uTexel"),
+                1.0f / static_cast<float>(image_.width),
+                1.0f / static_cast<float>(image_.height));
+    glUniform2f(glGetUniformLocation(normal_program_, "uImageSize"),
+                static_cast<float>(image_.width), static_cast<float>(image_.height));
+    glUniform1f(glGetUniformLocation(normal_program_, "uPixelScale"), 1.0f);
+    glUniform1f(glGetUniformLocation(normal_program_, "uAmplitude"),
+                std::max(lighting_.height, 0.001f));
+    glUniform1f(glGetUniformLocation(normal_program_, "uNormalStrength"),
+                lighting_.normal_strength);
+    glUniform1f(glGetUniformLocation(normal_program_, "uMaxTilt"), 1.5f);
+    glUniform1f(glGetUniformLocation(normal_program_, "uDetailStrength"),
+                lighting_.detail);
+    glUniform1f(glGetUniformLocation(normal_program_, "uDenoise"),
+                lighting_.smooth > 1.5f ? 1.0f : 0.0f);
+    glUniform3f(glGetUniformLocation(normal_program_, "uFlips"),
+                lighting_.flip_x ? -1.0f : 1.0f,
+                lighting_.flip_y ? -1.0f : 1.0f,
+                lighting_.flip_z ? -1.0f : 1.0f);
+    glBindVertexArray(normal_vao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, surface_width_, surface_height_);
+    normal_pass_ready_ = true;
+    return true;
+}
+
+bool AndroidApp::initialize_shadow_pass(std::string& error) {
+    shadow_program_ = linkProgram(kFullscreenVertexShader, kShadowFragmentShaderEs, error);
+    if (shadow_program_ == 0) {
+        return false;
+    }
+    shadow_blur_program_ =
+        linkProgram(kFullscreenVertexShader, kShadowBlurFragmentShaderEs, error);
+    if (shadow_blur_program_ == 0) {
+        return false;
+    }
+    glGenVertexArrays(1, &shadow_vao_);
+    return true;
+}
+
+bool AndroidApp::ensure_shadow_targets(int width, int height, std::string& error) {
+    const int divisor = std::clamp(lighting_.shadow_divisor, 1, 4);
+    const int shadow_width = std::max(1, (width + divisor - 1) / divisor);
+    const int shadow_height = std::max(1, (height + divisor - 1) / divisor);
+    if (shadow_pass_ready_ && shadow_width_ == shadow_width &&
+        shadow_height_ == shadow_height && shadow_fbo_[0] != 0 &&
+        shadow_fbo_[1] != 0 && blur_fbo_[0] != 0 && blur_fbo_[1] != 0) {
+        return true;
+    }
+
+    for (int i = 0; i < 2; ++i) {
+        if (shadow_texture_[i] != 0) glDeleteTextures(1, &shadow_texture_[i]);
+        if (blur_texture_[i] != 0) glDeleteTextures(1, &blur_texture_[i]);
+        if (shadow_fbo_[i] != 0) glDeleteFramebuffers(1, &shadow_fbo_[i]);
+        if (blur_fbo_[i] != 0) glDeleteFramebuffers(1, &blur_fbo_[i]);
+        shadow_texture_[i] = blur_texture_[i] = 0;
+        shadow_fbo_[i] = blur_fbo_[i] = 0;
+    }
+
+    for (int i = 0; i < 2; ++i) {
+        glGenTextures(1, &shadow_texture_[i]);
+        glBindTexture(GL_TEXTURE_2D, shadow_texture_[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, shadow_width, shadow_height, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glGenFramebuffers(1, &shadow_fbo_[i]);
+        glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo_[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               shadow_texture_[i], 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            error = "shadow framebuffer incomplete";
+            return false;
+        }
+
+        glGenTextures(1, &blur_texture_[i]);
+        glBindTexture(GL_TEXTURE_2D, blur_texture_[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, shadow_width, shadow_height, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glGenFramebuffers(1, &blur_fbo_[i]);
+        glBindFramebuffer(GL_FRAMEBUFFER, blur_fbo_[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               blur_texture_[i], 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            error = "shadow blur framebuffer incomplete";
+            return false;
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    shadow_width_ = shadow_width;
+    shadow_height_ = shadow_height;
+    shadow_pass_ready_ = true;
+    return true;
+}
+
+bool AndroidApp::render_shadow_pass(std::string& error) {
+    if (shadow_program_ == 0 || shadow_blur_program_ == 0 || shadow_vao_ == 0 ||
+        height_texture_ == 0 || original_texture_ == 0) {
+        error = "shadow pass inputs unavailable";
+        return false;
+    }
+    if (!ensure_shadow_targets(image_.width, image_.height, error)) {
+        return false;
+    }
+
+    std::vector<float> positions(24, 0.0f);
+    std::vector<int> enabled(8, 0);
+    const int light_count = static_cast<int>(std::min<size_t>(lights_.size(), 8));
+    for (int i = 0; i < light_count; ++i) {
+        const Light& light = lights_[static_cast<size_t>(i)];
+        positions[static_cast<size_t>(i * 3)] = light.position[0];
+        positions[static_cast<size_t>(i * 3 + 1)] = light.position[1];
+        positions[static_cast<size_t>(i * 3 + 2)] = light.position[2];
+        enabled[static_cast<size_t>(i)] = light.enabled ? 1 : 0;
+    }
+
+    for (int half = 0; half < 2; ++half) {
+        glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo_[half]);
+        glViewport(0, 0, shadow_width_, shadow_height_);
+        glUseProgram(shadow_program_);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, height_texture_);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, original_texture_);
+        glUniform1i(glGetUniformLocation(shadow_program_, "uHeight"), 0);
+        glUniform1i(glGetUniformLocation(shadow_program_, "uColor"), 1);
+        glUniform2f(glGetUniformLocation(shadow_program_, "uImageSize"),
+                    static_cast<float>(image_.width), static_cast<float>(image_.height));
+        glUniform1f(glGetUniformLocation(shadow_program_, "uAmplitude"),
+                    std::max(lighting_.height, 0.001f));
+        glUniform1f(glGetUniformLocation(shadow_program_, "uBias"), lighting_.shadow_bias);
+        glUniform1f(glGetUniformLocation(shadow_program_, "uSoftness"),
+                    lighting_.shadow_softness);
+        glUniform1i(glGetUniformLocation(shadow_program_, "uLightCount"), light_count);
+        glUniform1i(glGetUniformLocation(shadow_program_, "uLightBase"), half * 4);
+        glUniform1i(glGetUniformLocation(shadow_program_, "uSteps"),
+                    std::clamp(lighting_.shadow_steps, 16, 192));
+        glUniform1i(glGetUniformLocation(shadow_program_, "uSamples"),
+                    std::clamp(lighting_.shadow_samples, 1, 8));
+        glUniform1i(glGetUniformLocation(shadow_program_, "uShadowsEnabled"),
+                    lighting_.shadow_enabled ? 1 : 0);
+        glUniform3fv(glGetUniformLocation(shadow_program_, "uLightPos"), 8,
+                     positions.data());
+        glUniform1iv(glGetUniformLocation(shadow_program_, "uLightEnabled"), 8,
+                     enabled.data());
+        glBindVertexArray(shadow_vao_);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, blur_fbo_[half]);
+        glUseProgram(shadow_blur_program_);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, shadow_texture_[half]);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, height_texture_);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, original_texture_);
+        glUniform1i(glGetUniformLocation(shadow_blur_program_, "uShadow"), 0);
+        glUniform1i(glGetUniformLocation(shadow_blur_program_, "uHeight"), 1);
+        glUniform1i(glGetUniformLocation(shadow_blur_program_, "uColor"), 2);
+        glUniform2f(glGetUniformLocation(shadow_blur_program_, "uTexel"),
+                    1.0f / static_cast<float>(shadow_width_),
+                    1.0f / static_cast<float>(shadow_height_));
+        glUniform1f(glGetUniformLocation(shadow_blur_program_, "uAmplitude"),
+                    std::max(lighting_.height, 0.001f));
+        glBindVertexArray(shadow_vao_);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(0);
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, surface_width_, surface_height_);
+    return true;
+}
+
 void AndroidApp::ensure_lighting_target(int width, int height) {
     if (lit_texture_ != 0 && lit_fbo_ != 0 && lit_width_ == width &&
         lit_height_ == height) {
@@ -2307,13 +2632,20 @@ void AndroidApp::ensure_lighting_target(int width, int height) {
 
 void AndroidApp::render_lighting() {
     if (!depth_ready_ || original_texture_ == 0 || normal_texture_ == 0 ||
-        lit_program_ == 0) {
+        height_texture_ == 0 || lit_program_ == 0) {
         return;
     }
     ensure_lighting_target(image_.width, image_.height);
     if (lit_texture_ == 0 || lit_fbo_ == 0) {
         return;
     }
+
+    std::string shadow_error;
+    const bool shadow_ok = render_shadow_pass(shadow_error);
+    if (!shadow_ok) {
+        LOGE("shadow pass failed: %s", shadow_error.c_str());
+    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, lit_fbo_);
     glViewport(0, 0, image_.width, image_.height);
     glUseProgram(lit_program_);
@@ -2322,53 +2654,81 @@ void AndroidApp::render_lighting() {
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, normal_texture_);
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, depth_texture_);
-    glUniform1i(glGetUniformLocation(lit_program_, "uAlbedo"), 0);
+    glBindTexture(GL_TEXTURE_2D, height_texture_);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, blur_texture_[0]);
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, blur_texture_[1]);
+
+    glUniform1i(glGetUniformLocation(lit_program_, "uColor"), 0);
     glUniform1i(glGetUniformLocation(lit_program_, "uNormal"), 1);
     glUniform1i(glGetUniformLocation(lit_program_, "uHeight"), 2);
+    glUniform1i(glGetUniformLocation(lit_program_, "uBlur0"), 3);
+    glUniform1i(glGetUniformLocation(lit_program_, "uBlur1"), 4);
     glUniform2f(glGetUniformLocation(lit_program_, "uImageSize"),
                 static_cast<float>(image_.width), static_cast<float>(image_.height));
     glUniform1f(glGetUniformLocation(lit_program_, "uAmplitude"),
                 std::max(lighting_.height, 0.001f));
+    const auto linear = [](float value) {
+        return value <= 0.04045f ? value / 12.92f
+                                 : std::pow((value + 0.055f) / 1.055f, 2.4f);
+    };
     glUniform3f(glGetUniformLocation(lit_program_, "uAmbientColor"),
-                lighting_.ambient_color[0], lighting_.ambient_color[1],
-                lighting_.ambient_color[2]);
+                linear(lighting_.ambient_color[0]),
+                linear(lighting_.ambient_color[1]),
+                linear(lighting_.ambient_color[2]));
     glUniform1f(glGetUniformLocation(lit_program_, "uAmbient"), lighting_.ambient);
     glUniform1f(glGetUniformLocation(lit_program_, "uWrap"), lighting_.wrap_light);
     glUniform1f(glGetUniformLocation(lit_program_, "uSpecular"), lighting_.specular);
     glUniform1f(glGetUniformLocation(lit_program_, "uShininess"), lighting_.shininess);
     glUniform1f(glGetUniformLocation(lit_program_, "uRim"), lighting_.rim);
-    glUniform1f(glGetUniformLocation(lit_program_, "uRoughness"), lighting_.roughness);
+    glUniform1f(glGetUniformLocation(lit_program_, "uMaterialRoughness"),
+                lighting_.roughness);
     glUniform1f(glGetUniformLocation(lit_program_, "uMetalness"), lighting_.metalness);
     glUniform1f(glGetUniformLocation(lit_program_, "uSheen"), lighting_.sheen);
     glUniform1f(glGetUniformLocation(lit_program_, "uSubsurface"),
                 lighting_.subsurface);
     glUniform1f(glGetUniformLocation(lit_program_, "uExposure"), lighting_.exposure);
-    glUniform1f(glGetUniformLocation(lit_program_, "uNormalStrength"),
-                lighting_.normal_strength);
     glUniform1f(glGetUniformLocation(lit_program_, "uMix"), lighting_.mix);
+    glUniform1f(glGetUniformLocation(lit_program_, "uComparison"), 0.5f);
+    glUniform1i(glGetUniformLocation(lit_program_, "uBaseMode"),
+                lighting_.base_mode ? 1 : 0);
+    glUniform1i(glGetUniformLocation(lit_program_, "uSelectedLight"),
+                selected_light_);
+    const bool shadows_active = lighting_.shadow_enabled && shadow_ok;
+    glUniform1i(glGetUniformLocation(lit_program_, "uShadowsEnabled"),
+                shadows_active ? 1 : 0);
     glUniform1i(glGetUniformLocation(lit_program_, "uLightingModel"),
                 static_cast<int>(lighting_.lighting_model));
     glUniform1i(glGetUniformLocation(lit_program_, "uToneMap"),
                 static_cast<int>(lighting_.tone_map));
-    glUniform1i(glGetUniformLocation(lit_program_, "uShadowsEnabled"),
-                lighting_.shadow_enabled ? 1 : 0);
+
+    int view_mode = 0;
+    switch (view_) {
+        case ViewMode::Lit: view_mode = 0; break;
+        case ViewMode::Normal: view_mode = 3; break;
+        case ViewMode::Depth: view_mode = 4; break;
+        case ViewMode::Shadow: view_mode = 6; break;
+        case ViewMode::Lighting: view_mode = 5; break;
+        case ViewMode::Original: view_mode = 2; break;
+    }
+    glUniform1i(glGetUniformLocation(lit_program_, "uViewMode"), view_mode);
 
     const int light_count =
         static_cast<int>(std::min<size_t>(lights_.size(), 8));
-    std::vector<float> positions(static_cast<size_t>(light_count) * 3, 0.0f);
-    std::vector<float> colors(static_cast<size_t>(light_count) * 3, 1.0f);
-    std::vector<float> intensities(static_cast<size_t>(light_count), 0.0f);
-    std::vector<float> ranges(static_cast<size_t>(light_count), 1.0f);
-    std::vector<int> enabled(static_cast<size_t>(light_count), 0);
-    std::vector<int> types(static_cast<size_t>(light_count), 0);
-    std::vector<float> spot_cos(static_cast<size_t>(light_count), -1.0f);
-    std::vector<float> spot_soft(static_cast<size_t>(light_count), 0.0f);
+    std::vector<float> positions(24, 0.0f);
+    std::vector<float> colors(24, 0.0f);
+    std::vector<float> intensities(8, 0.0f);
+    std::vector<float> ranges(8, 1.0f);
+    std::vector<int> enabled(8, 0);
+    std::vector<int> types(8, 0);
+    std::vector<float> spot_cos(8, -1.0f);
+    std::vector<float> spot_soft(8, 0.0f);
     for (int i = 0; i < light_count; ++i) {
         const Light& light = lights_[static_cast<size_t>(i)];
         for (int axis = 0; axis < 3; ++axis) {
             positions[static_cast<size_t>(i * 3 + axis)] = light.position[axis];
-            colors[static_cast<size_t>(i * 3 + axis)] = light.color[axis];
+            colors[static_cast<size_t>(i * 3 + axis)] = linear(light.color[axis]);
         }
         intensities[static_cast<size_t>(i)] = light.intensity;
         ranges[static_cast<size_t>(i)] = light.range;
@@ -2383,32 +2743,22 @@ void AndroidApp::render_lighting() {
             std::clamp(light.spot_softness, 0.0f, 1.0f);
     }
     glUniform1i(glGetUniformLocation(lit_program_, "uLightCount"), light_count);
-    if (light_count > 0) {
-        glUniform3fv(glGetUniformLocation(lit_program_, "uLightPos"), light_count,
-                     positions.data());
-        glUniform3fv(glGetUniformLocation(lit_program_, "uLightColor"), light_count,
-                     colors.data());
-        glUniform1fv(glGetUniformLocation(lit_program_, "uLightIntensity"),
-                     light_count, intensities.data());
-        glUniform1fv(glGetUniformLocation(lit_program_, "uLightRange"), light_count,
-                     ranges.data());
-        glUniform1iv(glGetUniformLocation(lit_program_, "uLightEnabled"),
-                     light_count, enabled.data());
-        glUniform1iv(glGetUniformLocation(lit_program_, "uLightType"), light_count,
-                     types.data());
-        glUniform1fv(glGetUniformLocation(lit_program_, "uLightSpotCos"),
-                     light_count, spot_cos.data());
-        glUniform1fv(glGetUniformLocation(lit_program_, "uLightSpotSoft"),
-                     light_count, spot_soft.data());
-    }
-
-    int mode = 0;
-    if (view_ == ViewMode::Shadow) {
-        mode = 1;
-    } else if (view_ == ViewMode::Lighting) {
-        mode = 2;
-    }
-    glUniform1i(glGetUniformLocation(lit_program_, "uMode"), mode);
+    glUniform3fv(glGetUniformLocation(lit_program_, "uLightPos"), 8,
+                 positions.data());
+    glUniform3fv(glGetUniformLocation(lit_program_, "uLightColor"), 8,
+                 colors.data());
+    glUniform1fv(glGetUniformLocation(lit_program_, "uLightIntensity"), 8,
+                 intensities.data());
+    glUniform1fv(glGetUniformLocation(lit_program_, "uLightRange"), 8,
+                 ranges.data());
+    glUniform1iv(glGetUniformLocation(lit_program_, "uLightEnabled"), 8,
+                 enabled.data());
+    glUniform1iv(glGetUniformLocation(lit_program_, "uLightType"), 8,
+                 types.data());
+    glUniform1fv(glGetUniformLocation(lit_program_, "uLightSpotCos"), 8,
+                 spot_cos.data());
+    glUniform1fv(glGetUniformLocation(lit_program_, "uLightSpotSoft"), 8,
+                 spot_soft.data());
 
     glBindVertexArray(lit_vao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -2416,12 +2766,10 @@ void AndroidApp::render_lighting() {
     glUseProgram(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, surface_width_, surface_height_);
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    for (int unit = 4; unit >= 0; --unit) {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 }
 
 bool AndroidApp::upload_texture(GLuint& texture, int width, int height,

@@ -28,9 +28,14 @@ Implemented:
   image names and error messages can occupy two lines.
 - Android document picker (`ACTION_OPEN_DOCUMENT`) with high-resolution downscaling and SurfaceView recreation recovery.
 - q4 depth inference via ONNX Runtime Android 1.20.0, CPU provider.
-- Depth and normal previews copied from the validated desktop-equivalent
-  pipeline: 5x5 depth median, min/max normalization, resize to source size,
-  central-difference normals at depth resolution, then upscale.
+- Depth processing uses the desktop-equivalent 5x5 median, min/max
+  normalization, and resize to source size. Normals are generated on the GPU
+  with a GLSL ES port of desktop `normal.frag` (median denoise, edge mask,
+  albedo detail, flips, amplitude and soft saturation).
+- Rendering now runs the desktop-style pass chain on GLES: height R32F,
+  normal FBO, two height-field shadow maps with ray-march + edge-aware blur,
+  and a GLSL ES port of desktop `lighting.frag` for Lit/Normal/Depth/Shadow/
+  Lighting views.
 - Model settings with **q4** as the bundled default, **恢复默认 Q4**, persisted
   selection, multiple custom ONNX models, and a bounded scrollable model list.
   Users choose a model storage folder via SAF; the app keeps read permission,
@@ -191,14 +196,13 @@ benchmarking is still pending.
 
 ## Known Issues
 
-- The shadow view is currently a normal/contact-based preview, not a true
-  light-space shadow map. `光照` remains somewhat flatter than the desktop
-  physical renderer.
+- The shader pass chain is now ported to GLES, but mobile visual parity is
+  still under validation against the desktop reference (shadow sampling,
+  normal orientation, float format fallbacks and performance).
 - Normal maps show a small amount of silhouette fringe on the q4 model.
 - Status text may log `就绪` while the background inference is still running;
   the busy overlay remains the authoritative state.
-- True desktop-parity height-field shadows and full desktop settings parity are
-  still pending; current shadow view remains an approximation.
+- Full desktop settings parity and final on-device shader validation remain.
 - The portrait build has been exercised on the x86_64 emulator; the previous
   landscape APK was validated on an arm64 phone. Re-test the portrait APK on
   physical hardware before release.
