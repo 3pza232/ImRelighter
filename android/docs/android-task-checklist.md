@@ -24,6 +24,19 @@ not lose requirements.
   touch target; no background scrolling while adjusting color.
 - Light rows use light color background + contrast text; marker numerals match.
 - Primary amber generate button; obsolete 性能与交互 settings section removed.
+- Added the desktop `depth_smooth.frag` height pass on GLES (R32F height
+  target): auto/manual depth range, edge-aware smoothing, invert and line
+  assist now affect height, normals and shadows. All normal/depth controls
+  rebuild the affected passes instead of leaving the field unused.
+- Added dirty-pass caching (`height_dirty_`, `normal_dirty_`, `shadow_dirty_`,
+  `render_dirty_`): idle frames issue no lighting passes; parameter drags skip
+  the shadow ray-march and use a 3x3 height filter, then refresh both at full
+  quality on release; `preview_long_edge` caps the interactive target while
+  export stays full resolution.
+- Normal target upgraded to RGBA16F with automatic RGBA8 fallback.
+- Task activation invalidates the shared height/normal/shadow/lit GPU caches,
+  so switching generated tasks cannot show another task's depth/height map.
+  Per-task view, base mode, lights and parameters were runtime-verified.
 
 ## User requirements
 
@@ -31,7 +44,7 @@ not lose requirements.
 | --- | --- | --- |
 | 1 | Theme and language switching in Settings | Implemented and persisted (`theme.txt`, `language.txt`); main UI translated, status strings still mostly Chinese |
 | 2 | Lower-panel sliders must drag by grabbing the knob | Implemented; emulator-tested with ambient slider |
-| 3 | Lighting/normal/depth/shadow/lighting-only must follow desktop algorithms | Implemented GPU normal pass, height-field shadow maps + blur, and lighting pass; visual parity under validation |
+| 3 | Lighting/normal/depth/shadow/lighting-only must follow desktop algorithms | Implemented desktop-ported `depth_smooth` height pass (R32F), normal pass (RGBA16F with fallback), height-field shadow maps + blur, and lighting pass; emulator parameter/multi-task validation passed, physical arm64 pending |
 | 4 | Export must not be vertically flipped and must show success feedback | Implemented; verified export path previously, needs final orientation regression |
 | 5 | Only manual "generate depth & normals"; no auto inference after install/resume | Implemented; tasks restore without auto inference |
 | 6 | Multi-task list like desktop; importing a new image must not replace the previous task | Implemented: task vector, thumbnails, switching, per-task depth/lights/material/view; close button and 8-task scroll validated on emulator; session-only |
@@ -83,15 +96,17 @@ not lose requirements.
 
 ## Verification needed
 
-- Physical arm64 phone: final regression of multi-task switching, task restore,
-  slider drag, scroll inertia, theme/language persistence, export orientation,
-  Settings outside-tap, custom ONNX file selection.
-- Emulator only verifies layout; do not treat it as final device validation.
+- Physical arm64 phone: final regression of normal orientation, height/normal
+  parameter effects, height-field shadows, multi-task switching and per-task
+  parameters, export orientation, preview edge, slider drag, scroll inertia,
+  theme/language persistence, Settings outside-tap, custom ONNX file selection.
+- Emulator only verifies layout and functional behavior; do not treat it as
+  final device validation.
 
 ## Next implementation order
 
-1. Desktop lighting/shadow parity, including true height-field shadow pass.
+1. Final arm64 device regression for the ported depth/normal/shadow/lighting
+   chain, per-task isolation and interactive performance.
 2. Finish language coverage for status messages and remaining labels.
 3. Settings parity and remaining desktop parameters.
-4. Verify final arm64 device build and removal of any stale installed task store.
-5. Optional NNAPI/provider validation and arm64 performance profiling.
+4. Optional NNAPI/provider validation and arm64 performance profiling.

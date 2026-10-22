@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/depth_shader.h"
 #include "app/lighting_shader.h"
 #include "app/shadow_shader.h"
 #include "app/normal_shader.h"
@@ -346,18 +347,31 @@ void AndroidApp::shutdown() {
     delete_texture(depth_texture_);
     delete_texture(normal_texture_);
     delete_texture(height_texture_);
+    delete_texture(depth_source_texture_);
     delete_texture(lit_texture_);
     if (normal_fbo_ != 0) {
         glDeleteFramebuffers(1, &normal_fbo_);
         normal_fbo_ = 0;
     }
+    if (height_fbo_ != 0) {
+        glDeleteFramebuffers(1, &height_fbo_);
+        height_fbo_ = 0;
+    }
     if (normal_program_ != 0) {
         glDeleteProgram(normal_program_);
         normal_program_ = 0;
     }
+    if (depth_program_ != 0) {
+        glDeleteProgram(depth_program_);
+        depth_program_ = 0;
+    }
     if (normal_vao_ != 0) {
         glDeleteVertexArrays(1, &normal_vao_);
         normal_vao_ = 0;
+    }
+    if (depth_vao_ != 0) {
+        glDeleteVertexArrays(1, &depth_vao_);
+        depth_vao_ = 0;
     }
     for (int i = 0; i < 2; ++i) {
         delete_texture(shadow_texture_[i]);
@@ -408,6 +422,7 @@ void AndroidApp::shutdown() {
 void AndroidApp::resize(int width, int height) {
     surface_width_ = std::max(width, 1);
     surface_height_ = std::max(height, 1);
+    render_dirty_ = true;
 }
 
 void AndroidApp::render() {
@@ -746,6 +761,9 @@ void AndroidApp::process_queues() {
                     }
                 }
                 touch_direct_control_ = direct_control;
+                if (direct_control) {
+                    interaction_active_ = true;
+                }
                 if (!direct_control) {
                     ui::cancelActiveControl();
                 }
@@ -858,6 +876,13 @@ void AndroidApp::process_queues() {
                 if (touch_direct_control_) {
                     io.AddMousePosEvent(x, y);
                     io.AddMouseButtonEvent(0, false);
+                    interaction_active_ = false;
+                    // The drag used the fast 3x3 interactive height filter.
+                    // Rebuild height/normal/shadow at full quality on release.
+                    height_dirty_ = true;
+                    normal_dirty_ = true;
+                    shadow_dirty_ = true;
+                    render_dirty_ = true;
                 } else if (show_settings_ && !in_settings) {
                     show_settings_ = false;
                 } else if (!touch_scrolling_ && !settings_touch_scrolling_ &&
@@ -982,6 +1007,9 @@ void AndroidApp::poll_inference() {
                                                 depth_.height, depth_.depth_rgba,
                                                 false, error);
                 if (uploaded) {
+                    height_dirty_ = true;
+                    normal_dirty_ = true;
+                    shadow_dirty_ = true;
                     std::string normal_error;
                     uploaded = render_normal_pass(normal_error);
                     if (!uploaded) {
@@ -995,6 +1023,10 @@ void AndroidApp::poll_inference() {
                     }
                 }
                 busy_ = false;
+                if (uploaded) {
+                    normal_dirty_ = false;
+                    render_dirty_ = true;
+                }
                 if (!uploaded) {
                     set_status(ui::tr("纹理上传失败: ", "Texture upload failed: ") + error);
                 } else {
@@ -1202,6 +1234,75 @@ void AndroidApp::draw_ui(float s) {
                        text_size.y * 0.5f),
             IM_COL32(232, 179, 106, 255), text);
     }
+
+    const bool first_state = !last_render_state_valid_;
+    const LightingSettings& previous = last_lighting_;
+    const bool height_changed =
+        first_state || previous.invert_depth != lighting_.invert_depth ||
+        previous.smooth != lighting_.smooth ||
+        previous.line_assist != lighting_.line_assist ||
+        previous.auto_depth_range != lighting_.auto_depth_range ||
+        previous.depth_min != lighting_.depth_min ||
+        previous.depth_max != lighting_.depth_max;
+    const bool normal_changed =
+        height_changed || previous.normal_strength != lighting_.normal_strength ||
+        previous.detail != lighting_.detail ||
+        previous.height != lighting_.height ||
+        previous.flip_x != lighting_.flip_x ||
+        previous.flip_y != lighting_.flip_y ||
+        previous.flip_z != lighting_.flip_z;
+    auto shadow_lights_changed = [](const std::vector<Light>& a,
+                                    const std::vector<Light>& b) {
+        if (a.size() != b.size()) {
+            return true;
+        }
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (a[i].enabled != b[i].enabled ||
+                a[i].position[0] != b[i].position[0] ||
+                a[i].position[1] != b[i].position[1] ||
+                a[i].position[2] != b[i].position[2]) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const bool shadow_changed =
+        height_changed || previous.height != lighting_.height ||
+        previous.shadow_enabled != lighting_.shadow_enabled ||
+        previous.shadow_bias != lighting_.shadow_bias ||
+        previous.shadow_softness != lighting_.shadow_softness ||
+        previous.shadow_steps != lighting_.shadow_steps ||
+        previous.shadow_samples != lighting_.shadow_samples ||
+        previous.shadow_divisor != lighting_.shadow_divisor ||
+        first_state || shadow_lights_changed(last_lights_, lights_);
+    const bool lighting_changed =
+        first_state || !(previous == lighting_) || !(last_lights_ == lights_);
+    if (lighting_changed) {
+        render_dirty_ = true;
+    }
+    if (height_changed) {
+        height_dirty_ = true;
+    }
+    if (normal_changed) {
+        normal_dirty_ = true;
+    }
+    if (shadow_changed) {
+        shadow_dirty_ = true;
+    }
+    // Shadows are the most expensive pass. Keep the last valid map while a
+    // control is being dragged, then refresh it once on release.
+    const bool now_interacting = ImGui::IsAnyItemActive();
+    if (interaction_active_ && !now_interacting) {
+        // Refresh the interactive height preview at full kernel quality.
+        height_dirty_ = true;
+        normal_dirty_ = true;
+        shadow_dirty_ = true;
+        render_dirty_ = true;
+    }
+    interaction_active_ = now_interacting;
+    last_lighting_ = lighting_;
+    last_lights_ = lights_;
+    last_render_state_valid_ = true;
 
     ImGui::End();
 }
@@ -1440,6 +1541,7 @@ void AndroidApp::draw_view_tabs(float s) {
                                   ImVec2(width, 36.0f * s)) &&
                 enabled) {
                 view_ = modes[i];
+                render_dirty_ = true;
             }
             ImGui::EndDisabled();
         }
@@ -1466,8 +1568,12 @@ void AndroidApp::draw_canvas(float s) {
          view_ == ViewMode::Lit || view_ == ViewMode::Shadow ||
          view_ == ViewMode::Lighting) && depth_ready_) {
         // The desktop renderer produces every non-original view through the
-        // same lighting/composite shader, including normal and depth previews.
-        render_lighting();
+        // same lighting/composite shader. Re-run the chain only when task,
+        // view, light state or normal parameters changed.
+        if (render_dirty_) {
+            render_lighting();
+            render_dirty_ = false;
+        }
         texture = lit_texture_;
     }
 
@@ -1972,15 +2078,17 @@ void AndroidApp::export_image(ViewMode mode) {
     std::string kind;
 
     view_ = mode;
-    render_lighting();
+    render_lighting(true);
     view_ = previous_view;
+    render_dirty_ = true;
     source_texture = lit_texture_;
     kind = mode == ViewMode::Normal  ? "normal"
            : mode == ViewMode::Depth ? "depth"
            : mode == ViewMode::Shadow ? "shadow"
            : mode == ViewMode::Lighting ? "lighting"
                                         : "lit";
-    if (source_texture == 0 || width <= 0 || height <= 0) {
+    if (source_texture == 0 || width <= 0 || height <= 0 ||
+        lit_width_ != width || lit_height_ != height) {
         export_busy_ = false;
         set_status(ui::tr("导出失败：纹理不可用", "Export failed: texture unavailable"));
         return;
@@ -2322,11 +2430,71 @@ bool AndroidApp::initialize_normal_pass(std::string& error) {
         return false;
     }
     glGenVertexArrays(1, &normal_vao_);
+    depth_program_ = linkProgram(kFullscreenVertexShader, kDepthFragmentShaderEs, error);
+    if (depth_program_ == 0) {
+        return false;
+    }
+    glGenVertexArrays(1, &depth_vao_);
+    return true;
+}
+
+bool AndroidApp::render_depth_pass(std::string& error) {
+    if (depth_program_ == 0 || depth_vao_ == 0) {
+        error = "depth pass is not initialized";
+        return false;
+    }
+    if (depth_.normalized_depth.size() !=
+        static_cast<size_t>(image_.width) * static_cast<size_t>(image_.height)) {
+        error = "depth pass inputs unavailable";
+        return false;
+    }
+    if (!ensure_normal_target(image_.width, image_.height, error)) {
+        return false;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, depth_source_texture_);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image_.width, image_.height, GL_RED,
+                    GL_FLOAT, depth_.normalized_depth.data());
+
+    glBindFramebuffer(GL_FRAMEBUFFER, height_fbo_);
+    glViewport(0, 0, image_.width, image_.height);
+    glUseProgram(depth_program_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, depth_source_texture_);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, original_texture_);
+    glUniform1i(glGetUniformLocation(depth_program_, "uDepth"), 0);
+    glUniform1i(glGetUniformLocation(depth_program_, "uColor"), 1);
+    glUniform2f(glGetUniformLocation(depth_program_, "uImageSize"),
+                static_cast<float>(image_.width), static_cast<float>(image_.height));
+    const float low = lighting_.auto_depth_range ? 0.0f : lighting_.depth_min;
+    const float high = lighting_.auto_depth_range ? 1.0f : lighting_.depth_max;
+    glUniform1f(glGetUniformLocation(depth_program_, "uLow"), low);
+    glUniform1f(glGetUniformLocation(depth_program_, "uSpan"),
+                std::max(high - low, 1e-6f));
+    glUniform1f(glGetUniformLocation(depth_program_, "uSmooth"), lighting_.smooth);
+    glUniform1i(glGetUniformLocation(depth_program_, "uInvert"),
+                lighting_.invert_depth ? 1 : 0);
+    glUniform1i(glGetUniformLocation(depth_program_, "uLineAssist"),
+                lighting_.line_assist ? 1 : 0);
+    glUniform1i(glGetUniformLocation(depth_program_, "uInteractive"),
+                interaction_active_ ? 1 : 0);
+    glBindVertexArray(depth_vao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    height_dirty_ = false;
+    normal_dirty_ = true;
+    shadow_dirty_ = true;
     return true;
 }
 
 bool AndroidApp::ensure_normal_target(int width, int height, std::string& error) {
-    if (normal_fbo_ != 0 && height_texture_ != 0 && normal_texture_ != 0 &&
+    if (normal_fbo_ != 0 && height_fbo_ != 0 && height_texture_ != 0 &&
+        depth_source_texture_ != 0 && normal_texture_ != 0 &&
         normal_width_ == width && normal_height_ == height) {
         return true;
     }
@@ -2334,14 +2502,31 @@ bool AndroidApp::ensure_normal_target(int width, int height, std::string& error)
         glDeleteFramebuffers(1, &normal_fbo_);
         normal_fbo_ = 0;
     }
+    if (height_fbo_ != 0) {
+        glDeleteFramebuffers(1, &height_fbo_);
+        height_fbo_ = 0;
+    }
     if (height_texture_ != 0) {
         glDeleteTextures(1, &height_texture_);
         height_texture_ = 0;
+    }
+    if (depth_source_texture_ != 0) {
+        glDeleteTextures(1, &depth_source_texture_);
+        depth_source_texture_ = 0;
     }
     if (normal_texture_ != 0) {
         glDeleteTextures(1, &normal_texture_);
         normal_texture_ = 0;
     }
+
+    glGenTextures(1, &depth_source_texture_);
+    glBindTexture(GL_TEXTURE_2D, depth_source_texture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, width, height, 0, GL_RED, GL_FLOAT,
+                 nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glGenTextures(1, &height_texture_);
     glBindTexture(GL_TEXTURE_2D, height_texture_);
@@ -2352,22 +2537,51 @@ bool AndroidApp::ensure_normal_target(int width, int height, std::string& error)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    glGenFramebuffers(1, &height_fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, height_fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           height_texture_, 0);
+    const GLenum height_status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (height_status != GL_FRAMEBUFFER_COMPLETE) {
+        error = "height framebuffer incomplete";
+        glDeleteFramebuffers(1, &height_fbo_);
+        height_fbo_ = 0;
+        return false;
+    }
+
+    // Match the desktop RGBA16F normal target when the device can render to
+    // it. GLES 3.0 devices without EXT_color_buffer_float fall back to RGBA8.
     glGenTextures(1, &normal_texture_);
     glBindTexture(GL_TEXTURE_2D, normal_texture_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA,
-                 GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA,
+                 GL_HALF_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
 
     glGenFramebuffers(1, &normal_fbo_);
     glBindFramebuffer(GL_FRAMEBUFFER, normal_fbo_);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            normal_texture_, 0);
-    const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        glDeleteTextures(1, &normal_texture_);
+        glGenTextures(1, &normal_texture_);
+        glBindTexture(GL_TEXTURE_2D, normal_texture_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA,
+                     GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               normal_texture_, 0);
+        status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         error = "normal framebuffer incomplete";
         glDeleteFramebuffers(1, &normal_fbo_);
@@ -2386,13 +2600,11 @@ bool AndroidApp::render_normal_pass(std::string& error) {
         error = "normal pass inputs unavailable";
         return false;
     }
-    if (!ensure_normal_target(image_.width, image_.height, error)) {
-        return false;
+    if (height_dirty_) {
+        if (!render_depth_pass(error)) {
+            return false;
+        }
     }
-
-    glBindTexture(GL_TEXTURE_2D, height_texture_);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image_.width, image_.height, GL_RED,
-                    GL_FLOAT, depth_.normalized_depth.data());
 
     glBindFramebuffer(GL_FRAMEBUFFER, normal_fbo_);
     glViewport(0, 0, image_.width, image_.height);
@@ -2430,6 +2642,7 @@ bool AndroidApp::render_normal_pass(std::string& error) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, surface_width_, surface_height_);
     normal_pass_ready_ = true;
+    normal_dirty_ = false;
     return true;
 }
 
@@ -2630,24 +2843,63 @@ void AndroidApp::ensure_lighting_target(int width, int height) {
     lit_height_ = height;
 }
 
-void AndroidApp::render_lighting() {
-    if (!depth_ready_ || original_texture_ == 0 || normal_texture_ == 0 ||
-        height_texture_ == 0 || lit_program_ == 0) {
+void AndroidApp::render_lighting(bool for_export) {
+    if (!depth_ready_ || original_texture_ == 0 || lit_program_ == 0) {
         return;
     }
-    ensure_lighting_target(image_.width, image_.height);
+    const bool allow_heavy = for_export || !interaction_active_;
+    // The height/normal passes are cheap enough to update during a drag, which
+    // keeps smooth/invert/line-assist feedback live. Only the expensive shadow
+    // ray-march is deferred until the finger is released.
+    if (height_dirty_) {
+        std::string height_error;
+        if (render_depth_pass(height_error)) {
+            height_dirty_ = false;
+            normal_dirty_ = true;
+        } else {
+            LOGE("height pass failed: %s", height_error.c_str());
+        }
+    }
+    if (normal_dirty_ && !height_dirty_) {
+        std::string normal_error;
+        if (render_normal_pass(normal_error)) {
+            normal_dirty_ = false;
+        } else {
+            LOGE("normal pass failed: %s", normal_error.c_str());
+        }
+    }
+    if (normal_texture_ == 0 || height_texture_ == 0) {
+        return;
+    }
+    int target_width = image_.width;
+    int target_height = image_.height;
+    if (!for_export) {
+        const int longest = std::max(image_.width, image_.height);
+        const int requested = std::clamp(lighting_.preview_long_edge, 512, 4096);
+        const int preview_long = std::min(requested, longest);
+        if (preview_long < longest) {
+            const double scale = static_cast<double>(preview_long) / longest;
+            target_width = std::max(1, static_cast<int>(std::lround(image_.width * scale)));
+            target_height = std::max(1, static_cast<int>(std::lround(image_.height * scale)));
+        }
+    }
+    ensure_lighting_target(target_width, target_height);
     if (lit_texture_ == 0 || lit_fbo_ == 0) {
         return;
     }
 
-    std::string shadow_error;
-    const bool shadow_ok = render_shadow_pass(shadow_error);
-    if (!shadow_ok) {
-        LOGE("shadow pass failed: %s", shadow_error.c_str());
+    bool shadow_ok = shadow_pass_ready_;
+    if (lighting_.shadow_enabled && shadow_dirty_ && allow_heavy) {
+        std::string shadow_error;
+        shadow_ok = render_shadow_pass(shadow_error);
+        if (shadow_ok) {
+            shadow_dirty_ = false;
+        } else {
+            LOGE("shadow pass failed: %s", shadow_error.c_str());
+        }
     }
-
     glBindFramebuffer(GL_FRAMEBUFFER, lit_fbo_);
-    glViewport(0, 0, image_.width, image_.height);
+    glViewport(0, 0, target_width, target_height);
     glUseProgram(lit_program_);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, original_texture_);
@@ -2894,10 +3146,17 @@ void AndroidApp::activate_task(int index) {
     material_preset_ = task.material_preset;
     light_preset_ = task.light_preset;
     fit_pending_ = true;
+    // Every task has its own depth/height/normal source. Invalidate the shared
+    // GPU cache so switching tasks cannot leak the previous task's height map,
+    // normals, shadow maps or lit texture.
+    height_dirty_ = true;
+    normal_dirty_ = true;
+    shadow_dirty_ = true;
+    render_dirty_ = true;
 
     std::string error;
     if (!upload_texture(original_texture_, image_.width, image_.height, image_.rgba,
-                        true, error)) {
+                        false, error)) {
         set_status(ui::tr("原图纹理上传失败: ", "Original texture upload failed: ") + error);
         return;
     }

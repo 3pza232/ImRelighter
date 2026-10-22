@@ -112,12 +112,14 @@ private:
     bool initialize_lighting(std::string& error);
     bool initialize_normal_pass(std::string& error);
     bool ensure_normal_target(int width, int height, std::string& error);
+    bool initialize_depth_pass(std::string& error);
+    bool render_depth_pass(std::string& error);
     bool render_normal_pass(std::string& error);
     bool initialize_shadow_pass(std::string& error);
     bool ensure_shadow_targets(int width, int height, std::string& error);
     bool render_shadow_pass(std::string& error);
     void ensure_lighting_target(int width, int height);
-    void render_lighting();
+    void render_lighting(bool for_export = false);
     bool upload_texture(GLuint& texture, int width, int height,
                         const std::vector<uint8_t>& rgba, bool mipmaps,
                         std::string& error);
@@ -169,12 +171,20 @@ private:
     GLuint depth_texture_ = 0;
     GLuint normal_texture_ = 0;
     GLuint height_texture_ = 0;
+    GLuint height_fbo_ = 0;
+    GLuint depth_source_texture_ = 0;
+    GLuint depth_program_ = 0;
+    GLuint depth_vao_ = 0;
     GLuint normal_fbo_ = 0;
     GLuint normal_program_ = 0;
     GLuint normal_vao_ = 0;
     int normal_width_ = 0;
     int normal_height_ = 0;
     bool normal_pass_ready_ = false;
+    bool height_dirty_ = true;
+    bool normal_dirty_ = true;
+    bool shadow_dirty_ = true;
+    bool interaction_active_ = false;
     GLuint shadow_texture_[2] = {0, 0};
     GLuint shadow_fbo_[2] = {0, 0};
     GLuint blur_texture_[2] = {0, 0};
@@ -196,12 +206,15 @@ private:
     LightingSettings lighting_;
     std::vector<Light> lights_;
     int selected_light_ = 0;
+    bool render_dirty_ = true;
+    LightingSettings last_lighting_{};
+    std::vector<Light> last_lights_;
+    bool last_render_state_valid_ = false;
     bool task_drawer_open_ = false;
     bool show_settings_ = false;
     int settings_tab_ = 0;
     int light_preset_ = 0;
     int material_preset_ = 0;
-    int inference_size_ = 0;
     float canvas_zoom_ = 1.0f;
     ImVec2 canvas_pan_ = ImVec2(0.0f, 0.0f);
     ImVec2 canvas_image_min_ = ImVec2(0.0f, 0.0f);

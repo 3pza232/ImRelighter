@@ -75,6 +75,8 @@ struct Light {
     LightType type = LightType::Point;
     float spot_angle = 35.0f;
     float spot_softness = 0.35f;
+
+    bool operator==(const Light&) const = default;
 };
 
 struct LightingSettings {
@@ -110,7 +112,6 @@ struct LightingSettings {
     float depth_max = 1.0f;
     bool auto_depth_range = true;
 
-    int inference_size = 0;
     int shadow_steps = 96;
     int shadow_samples = 4;
     int shadow_divisor = 2;
@@ -120,6 +121,8 @@ struct LightingSettings {
     ToneMap tone_map = ToneMap::Soft;
     bool base_mode = false;
     float mix = 1.0f;
+
+    bool operator==(const LightingSettings&) const = default;
 };
 
 }  // namespace imrelighter

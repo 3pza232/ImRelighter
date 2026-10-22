@@ -28,14 +28,25 @@ Implemented:
   image names and error messages can occupy two lines.
 - Android document picker (`ACTION_OPEN_DOCUMENT`) with high-resolution downscaling and SurfaceView recreation recovery.
 - q4 depth inference via ONNX Runtime Android 1.20.0, CPU provider.
-- Depth processing uses the desktop-equivalent 5x5 median, min/max
-  normalization, and resize to source size. Normals are generated on the GPU
-  with a GLSL ES port of desktop `normal.frag` (median denoise, edge mask,
-  albedo detail, flips, amplitude and soft saturation).
-- Rendering now runs the desktop-style pass chain on GLES: height R32F,
-  normal FBO, two height-field shadow maps with ray-march + edge-aware blur,
-  and a GLSL ES port of desktop `lighting.frag` for Lit/Normal/Depth/Shadow/
-  Lighting views.
+- Depth processing uses min/max normalization and resize to source size. The
+  height map is generated on the GPU with a GLSL ES port of desktop
+  `depth_smooth.frag` (auto/manual depth range, edge-aware smoothing, invert and
+  line assist). Normals are generated on the GPU with a GLSL ES port of desktop
+  `normal.frag` (median denoise, edge mask, albedo detail, flips, amplitude and
+  soft saturation).
+- Rendering now runs the desktop-style pass chain on GLES: R32F height target,
+  RGBA16F normal target (automatic RGBA8 fallback), two height-field shadow maps
+  with ray-march + edge-aware blur, and a GLSL ES port of desktop
+  `lighting.frag` for Lit/Normal/Depth/Shadow/Lighting views.
+- Render work is dirty-flag driven: idle frames reuse the lit texture; changing
+  normal/depth parameters re-runs only the height/normal passes; the expensive
+  shadow ray-march is deferred while a control is being dragged and refreshed on
+  release. The height filter also switches to a 3x3 fast kernel during a drag,
+  then rebuilds at full quality on release. `preview_long_edge` caps the
+  interactive lighting target; export always renders at full image resolution.
+- GPU height/normal/shadow/lit caches are invalidated when switching tasks, so
+  each task's depth, normals, view, lights and parameters remain isolated even
+  though the same GL objects are reused.
 - Model settings with **q4** as the bundled default, **恢复默认 Q4**, persisted
   selection, multiple custom ONNX models, and a bounded scrollable model list.
   Users choose a model storage folder via SAF; the app keeps read permission,
@@ -95,6 +106,35 @@ Validated on the x86_64 SwiftShader emulator: import/recovery, Home/resume with
 identical pre/post screenshots, task deletion, 8-task drawer scroll, slider drag,
 inline color picker, settings isolation, and primary button behavior. Physical
 arm64 regression remains required.
+
+## Performance, Parameter and Multi-task Pass (2026-10-22)
+
+- Added the missing desktop `depth_smooth.frag` pass, connected to
+  `边缘平滑`, `反转深度`, `线条辅助`, `自动深度范围`, `深度范围`, `法线强度`,
+  `表面细节`, `深度幅度` and the normal flips. These controls now invalidate and
+  rebuild the height/normal data instead of only changing an unused field.
+- The height pass is R32F and feeds both the normal pass and the shadow
+  ray-march, so changing depth smoothing/inversion immediately changes
+  shading and shadows.
+- The normal target is RGBA16F like desktop, with automatic RGBA8 fallback if
+  the device cannot render to RGBA16F.
+- Every render pass has its own dirty state (`height_dirty_`, `normal_dirty_`,
+  `shadow_dirty_`, `render_dirty_`). Static frames no longer run any GPU passes.
+  Dragging a parameter updates height/normal/lighting live while the shadow
+  ray-march is skipped until release, which removes the per-frame shadow cost
+  from parameter editing.
+- `preview_long_edge` now controls the lighting preview resolution exactly like
+  desktop; export re-renders at full resolution.
+- Activating a task forces height/normal/shadow/lit invalidation. Switching
+  between generated tasks rebuilds all GPU data from that task's own
+  `normalized_depth`, lights and lighting settings; no previous task's height
+  map or x-compressed depth can leak into the next task.
+
+Validated on the x86_64 SwiftShader emulator: normal strength, surface detail,
+edge smoothing, line assist, depth inversion, depth amplitude, preview edge,
+lit/normal/depth/shadow views, and per-task `view`, `base_mode`, depth and
+parameters after switching between two generated tasks. Physical arm64
+regression remains required.
 
 ## Directory Layout
 
