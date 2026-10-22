@@ -6,8 +6,8 @@ not lose requirements.
 ## Current build
 
 - Source: `android/`
-- APK: `android/dist/ImRelighterAndroid-ui-polish.apk`
-- SHA-256: `B98AAE802826981716C06C4BE66CE9AC6BA9EB2811BA315948099E0D17B655D5`
+- APK: `android/dist/ImRelighterAndroid-model-config.apk`
+- SHA-256: `2F7B3AFB29394A87792D0BF3F8E7360FFF858DA107100EEF7013B6A895DCEA6B`
 - Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleDebug --offline --no-daemon`
 
 ## Fixes in the current build
@@ -65,6 +65,14 @@ not lose requirements.
   for light list/selectable rows.
 - Language: `zh/en` toggle and persisted language; top bar, view tabs, task rail,
   lower-panel controls, Settings tabs and major labels translated.
+- Model handling: custom model names come from the parent folder; multiple
+  custom models persist; the model list is bounded and scrollable; Settings
+  shows a short relative path and custom type instead of raw ids.
+- Preprocessing: `preprocessor_config.json` is resolved from the model folder,
+  then its parent, for both bundled assets and local custom models, using the
+  same JSON semantics as desktop.
+- After a successful manual inference, an Original view switches to Lit while
+  an explicitly selected other view is preserved.
 
 ## Verification needed
 

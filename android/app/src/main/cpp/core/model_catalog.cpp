@@ -12,6 +12,7 @@ namespace imrelighter {
 namespace {
 
 constexpr const char* kTag = "ImRelighter";
+constexpr const char* kCustomPrefix = "file:";
 
 bool assetExists(AAssetManager* assets, const std::string& path) {
     if (assets == nullptr || path.empty()) {
@@ -30,12 +31,55 @@ bool fileExists(const std::string& path) {
     return !path.empty() && std::filesystem::is_regular_file(path, ec);
 }
 
+std::string customId(const std::string& path) {
+    return std::string(kCustomPrefix) + path;
+}
+
+std::string displayName(const std::filesystem::path& path) {
+    std::string name = path.parent_path().filename().string();
+    if (name.empty() || name == ".") {
+        name = path.stem().string();
+    }
+    return name.empty() ? "自定义模型" : name;
+}
+
+void addCustomModel(std::vector<ModelInfo>& models,
+                    const std::string& absolute_path) {
+    const std::string id = customId(absolute_path);
+    models.erase(std::remove_if(models.begin(), models.end(),
+                                [&](const ModelInfo& model) {
+                                    return model.id == id;
+                                }),
+                 models.end());
+    const std::filesystem::path path(absolute_path);
+    models.push_back(ModelInfo{
+        id,
+        displayName(path),
+        "自定义 ONNX · 本地文件",
+        absolute_path,
+        true,
+    });
+}
+
+void saveCustomModels(const std::string& files_dir,
+                      const std::vector<ModelInfo>& models) {
+    std::ofstream file(files_dir + "/custom_models.txt", std::ios::trunc);
+    if (!file) {
+        return;
+    }
+    for (const ModelInfo& model : models) {
+        if (model.id.rfind(kCustomPrefix, 0) == 0) {
+            file << model.asset_path << '\n';
+        }
+    }
+}
+
 }  // namespace
 
 ModelCatalog::ModelCatalog(AAssetManager* assets) : assets_(assets) {
     models_.push_back(ModelInfo{
         "q4",
-        "Q4",
+        "q4",
         "4-bit 权重 · FP32 激活 · 推荐",
         "models/depth-anything-v2-small/q4/model_q4.onnx",
         false,
@@ -65,57 +109,65 @@ bool ModelCatalog::available(const std::string& id) const {
     return model != nullptr && model->available;
 }
 
-bool ModelCatalog::register_custom_model(const std::string& files_dir,
-                                         const std::string& absolute_path) {
+std::string ModelCatalog::register_custom_model(
+    const std::string& files_dir, const std::string& absolute_path) {
     if (!fileExists(absolute_path)) {
         __android_log_print(ANDROID_LOG_WARN, kTag,
                             "custom model file is missing: %s", absolute_path.c_str());
-        return false;
+        return {};
     }
 
-    models_.erase(std::remove_if(models_.begin(), models_.end(),
-                                 [](const ModelInfo& model) {
-                                     return model.id == "custom";
-                                 }),
-                  models_.end());
-
-    const std::filesystem::path path(absolute_path);
-    const std::string filename = path.filename().string();
-    models_.push_back(ModelInfo{
-        "custom",
-        filename.empty() ? "自定义模型" : filename,
-        "自定义 ONNX · 本地文件",
-        absolute_path,
-        true,
-    });
-
-    std::ofstream file(files_dir + "/custom_model.txt", std::ios::trunc);
-    if (file) {
-        file << absolute_path;
-    }
-    __android_log_print(ANDROID_LOG_INFO, kTag, "registered custom model: %s",
-                        absolute_path.c_str());
-    return true;
+    addCustomModel(models_, absolute_path);
+    saveCustomModels(files_dir, models_);
+    const std::string id = customId(absolute_path);
+    __android_log_print(ANDROID_LOG_INFO, kTag,
+                        "registered custom model: %s (%s)", absolute_path.c_str(),
+                        displayName(std::filesystem::path(absolute_path)).c_str());
+    return id;
 }
 
 void ModelCatalog::load_custom_model(const std::string& files_dir) {
-    std::ifstream file(files_dir + "/custom_model.txt");
+    // Keep q4 and any already registered models; load each persisted custom
+    // path once. The old single-path file is still accepted for upgrades.
+    std::ifstream file(files_dir + "/custom_models.txt");
+    if (!file) {
+        file.open(files_dir + "/custom_model.txt");
+    }
     if (!file) {
         return;
     }
     std::string path;
-    std::getline(file, path);
-    if (!path.empty() && fileExists(path)) {
-        register_custom_model(files_dir, path);
+    while (std::getline(file, path)) {
+        if (!path.empty() && path.back() == '\r') {
+            path.pop_back();
+        }
+        if (!path.empty() && fileExists(path)) {
+            addCustomModel(models_, path);
+        }
     }
+    saveCustomModels(files_dir, models_);
 }
 
 std::string ModelCatalog::load_selection(const std::string& files_dir) const {
     const_cast<ModelCatalog*>(this)->load_custom_model(files_dir);
     std::ifstream input(files_dir + "/model.txt");
     std::string id;
-    if (input >> id && available(id)) {
-        return id;
+    if (std::getline(input, id)) {
+        if (!id.empty() && id.back() == '\r') {
+            id.pop_back();
+        }
+        if (id == "custom") {
+            // Migrate the pre-multi-model selection id to the first custom
+            // model retained from custom_models.txt.
+            for (const ModelInfo& model : models_) {
+                if (model.id.rfind(kCustomPrefix, 0) == 0) {
+                    return model.id;
+                }
+            }
+        }
+        if (!id.empty() && available(id)) {
+            return id;
+        }
     }
     return kDefaultId;
 }

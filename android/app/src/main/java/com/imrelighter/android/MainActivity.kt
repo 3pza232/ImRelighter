@@ -11,7 +11,9 @@ import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
@@ -28,6 +30,8 @@ import android.widget.TextView
 import android.widget.Toast
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.DigestOutputStream
+import java.security.MessageDigest
 
 class MainActivity : Activity(), SurfaceHolder.Callback {
     companion object {
@@ -208,18 +212,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 return
             }
             val uri = data?.data ?: return
-            try {
-                val path = copyModelFile(uri)
-                if (path == null) {
-                    showTransientMessage("模型文件复制失败")
-                    return
+            Thread {
+                try {
+                    val path = copyModelFile(uri)
+                    if (path == null) {
+                        showTransientMessage("模型文件复制失败")
+                        return@Thread
+                    }
+                    runOnUiThread {
+                        nativeSelectModelFile(path)
+                        showTransientMessage("已选择模型文件")
+                    }
+                } catch (error: Throwable) {
+                    Log.e(TAG, "model file selection failed", error)
+                    showTransientMessage(
+                        "模型文件选择失败: ${error.message ?: error.javaClass.simpleName}"
+                    )
                 }
-                nativeSelectModelFile(path)
-                showTransientMessage("已选择模型文件")
-            } catch (error: Throwable) {
-                Log.e(TAG, "model file selection failed", error)
-                showTransientMessage("模型文件选择失败: ${error.message ?: error.javaClass.simpleName}")
-            }
+            }.start()
             return
         }
         if (requestCode != REQUEST_OPEN_IMAGE) {
@@ -293,18 +303,145 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun copyModelFile(uri: Uri): String? {
-        val rawName = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { "model.onnx" }
+        val displayName = queryDisplayName(uri)
+            ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "model.onnx"
-        val targetDir = File(filesDir, "models")
+        if (!displayName.lowercase().endsWith(".onnx")) {
+            throw IllegalArgumentException("请选择 .onnx 模型文件")
+        }
+        val safeName = sanitizeFilePart(displayName).ifBlank { "model.onnx" }
+        val stem = safeName.substringBeforeLast('.').ifBlank { "model" }
+        val folderName = modelFolderName(uri, safeName)
+        val modelsDir = File(filesDir, "models")
+        val targetDir = File(modelsDir, folderName)
         if (!targetDir.exists() && !targetDir.mkdirs()) {
             return null
         }
-        val target = File(targetDir, rawName)
-        contentResolver.openInputStream(uri)?.use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
-        } ?: return null
+
+        val temp = File(targetDir, ".tmp-${System.nanoTime()}.onnx")
+        val digest = MessageDigest.getInstance("SHA-256")
+        val input = contentResolver.openInputStream(uri) ?: return null
+        input.use { source ->
+            temp.outputStream().use { output ->
+                DigestOutputStream(output, digest).use { digestOutput ->
+                    source.copyTo(digestOutput)
+                }
+            }
+        }
+        if (temp.length() == 0L) {
+            temp.delete()
+            throw IllegalArgumentException("模型文件为空")
+        }
+        val suffix = digest.digest().joinToString("") { "%02x".format(it) }.take(8)
+        val target = File(targetDir, "${stem}_${suffix}.onnx")
+        if (!temp.renameTo(target)) {
+            temp.copyTo(target, overwrite = true)
+            temp.delete()
+        }
+
+        // Mirror the desktop rule and keep the effective config in the model's
+        // own folder so it cannot leak to a different custom model.
+        copyPreprocessorConfig(uri, targetDir)
         Log.i(TAG, "model file selected: ${target.absolutePath} (${target.length()} bytes)")
         return target.absolutePath
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        return try {
+            contentResolver.query(
+                uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        } catch (error: Throwable) {
+            Log.w(TAG, "could not query model display name", error)
+            null
+        }
+    }
+
+    private fun sanitizeFilePart(value: String): String {
+        // Preserve Unicode folder names such as "手机模型"; only remove path
+        // separators, reserved characters and control bytes.
+        return value.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_")
+            .trim()
+            .trimEnd('.', ' ')
+            .take(120)
+    }
+
+    private fun modelFolderName(uri: Uri, fileName: String): String {
+        return try {
+            val documentId = DocumentsContract.getDocumentId(uri)
+            val parent = documentId.substringBeforeLast('/', "")
+            val folder = parent.substringAfterLast('/')
+            sanitizeFilePart(folder).ifBlank { sanitizeFilePart(fileName.substringBeforeLast('.')) }
+                .ifBlank { "custom" }
+        } catch (error: Throwable) {
+            sanitizeFilePart(fileName.substringBeforeLast('.')).ifBlank { "custom" }
+        }
+    }
+
+    private fun copyPreprocessorConfig(uri: Uri, modelDir: File) {
+        val stale = File(modelDir, "preprocessor_config.json")
+        val authority = uri.authority
+        val documentId = try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (error: Throwable) {
+            null
+        }
+        if (authority == null || documentId == null) {
+            stale.delete()
+            return
+        }
+        val parent = documentId.substringBeforeLast('/', "")
+        var copied = false
+        if (parent.isNotEmpty()) {
+            copied = copyConfigFromDocumentChildren(authority, parent, modelDir)
+            if (!copied) {
+                val grandparent = parent.substringBeforeLast('/', "")
+                if (grandparent.isNotEmpty() && grandparent != parent) {
+                    copied = copyConfigFromDocumentChildren(authority, grandparent, modelDir)
+                }
+            }
+        }
+        if (!copied) {
+            stale.delete()
+        }
+    }
+
+    private fun copyConfigFromDocumentChildren(
+        authority: String, parentDocumentId: String, destinationDir: File
+    ): Boolean {
+        return try {
+            val childrenUri =
+                DocumentsContract.buildChildDocumentsUri(authority, parentDocumentId)
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME
+            )
+            contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(1) != "preprocessor_config.json") continue
+                    val childUri = DocumentsContract.buildDocumentUri(
+                        authority, cursor.getString(0)
+                    )
+                    val destination = File(destinationDir, "preprocessor_config.json")
+                    val temp = File(destinationDir, ".preprocessor_config.json.tmp")
+                    contentResolver.openInputStream(childUri)?.use { input ->
+                        temp.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    if (!temp.renameTo(destination)) {
+                        temp.copyTo(destination, overwrite = true)
+                        temp.delete()
+                    }
+                    Log.i(TAG, "preprocessor config copied: ${destination.absolutePath}")
+                    return true
+                }
+            }
+            false
+        } catch (error: Throwable) {
+            Log.w(TAG, "could not copy preprocessor config", error)
+            false
+        }
     }
 
     private fun showTransientMessage(message: String) {

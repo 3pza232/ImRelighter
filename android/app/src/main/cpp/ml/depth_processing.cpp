@@ -44,7 +44,8 @@ std::vector<float> medianFilterDepth(const std::vector<float>& input, int width,
 
 bool buildDepthAndNormal(const std::vector<float>& raw_depth, int raw_width,
                          int raw_height, int target_width, int target_height,
-                         DepthResult& result, std::string& error) {
+                         DepthResult& result, std::string& error,
+                         bool invert_depth) {
     result = DepthResult{};
     if (raw_depth.empty() || raw_width <= 0 || raw_height <= 0 ||
         target_width <= 0 || target_height <= 0 ||
@@ -79,8 +80,8 @@ bool buildDepthAndNormal(const std::vector<float>& raw_depth, int raw_width,
 
     std::vector<float> normalized_raw(filtered.size());
     for (size_t i = 0; i < filtered.size(); ++i) {
-        normalized_raw[i] =
-            std::clamp((filtered[i] - minimum) / span, 0.0f, 1.0f);
+        float value = std::clamp((filtered[i] - minimum) / span, 0.0f, 1.0f);
+        normalized_raw[i] = invert_depth ? 1.0f - value : value;
     }
 
     std::vector<float> resized(static_cast<size_t>(target_width) * target_height);

@@ -7,12 +7,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../..")
 set(IMGUI_DIR "${ROOT_DIR}/third_party/imgui")
 set(STB_DIR "${ROOT_DIR}/third_party/stb")
+set(JSON_DIR "${ROOT_DIR}/third_party/json")
 set(ORT_DIR "${ROOT_DIR}/third_party/onnxruntime-android-1.20.0")
 
 add_library(imrelighter SHARED
     app/android_app.cpp
     core/model_catalog.cpp
     io/image_loader.cpp
+    ml/model_config.cpp
     ml/preprocess.cpp
     ml/depth_processing.cpp
     ml/inference_service.cpp
@@ -39,6 +41,7 @@ target_include_directories(imrelighter PRIVATE
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
     ${STB_DIR}
+    ${JSON_DIR}
     ${ORT_DIR}/headers
 )
 

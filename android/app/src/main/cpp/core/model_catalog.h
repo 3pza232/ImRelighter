@@ -22,8 +22,9 @@ public:
     bool available(const std::string& id) const;
 
     void load_custom_model(const std::string& files_dir);
-    bool register_custom_model(const std::string& files_dir,
-                               const std::string& absolute_path);
+    // Returns the stable model id on success, or an empty string on failure.
+    std::string register_custom_model(const std::string& files_dir,
+                                      const std::string& absolute_path);
     std::string load_selection(const std::string& files_dir) const;
     bool save_selection(const std::string& files_dir, const std::string& id) const;
 

@@ -205,6 +205,15 @@ private:
     float settings_scroll_max_ = 0.0f;
     bool settings_touch_scrolling_ = false;
     bool settings_touch_started_ = false;
+    ImVec2 model_list_min_ = ImVec2(0.0f, 0.0f);
+    ImVec2 model_list_max_ = ImVec2(0.0f, 0.0f);
+    float model_list_scroll_ = 0.0f;
+    float model_list_scroll_max_ = 0.0f;
+    bool model_list_touch_scrolling_ = false;
+    bool model_list_scroll_dirty_ = false;
+    bool model_list_touch_started_ = false;
+    float model_list_touch_start_y_ = 0.0f;
+    float model_list_touch_start_scroll_ = 0.0f;
     bool pending_settings_click_ = false;
     bool pending_settings_release_ = false;
     float settings_click_x_ = 0.0f;

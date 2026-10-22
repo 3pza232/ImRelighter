@@ -116,11 +116,6 @@ bool InferenceService::busy() const {
     return processing_ || has_pending_;
 }
 
-std::string InferenceService::loaded_model_id() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return loaded_model_id_;
-}
-
 void InferenceService::run() {
     while (true) {
         Job job;
@@ -147,15 +142,20 @@ void InferenceService::run() {
 void InferenceService::process(Job job) {
     std::string error;
     try {
-        std::vector<float> tensor;
-        int input_width = 0;
-        int input_height = 0;
-        if (!preprocessImage(job.image, tensor, input_width, input_height, error)) {
+        if (!ensure_session(job.model_asset_path, error)) {
             set_error(job.generation, error);
             return;
         }
 
-        if (!ensure_session(job.model_asset_path, error)) {
+        // Read the processor config for every job so editing the JSON beside
+        // the model is picked up without rebuilding the ORT session.
+        const ModelConfig config = loadModelConfig(assets_, job.model_asset_path);
+
+        std::vector<float> tensor;
+        int input_width = 0;
+        int input_height = 0;
+        if (!preprocessImage(job.image, config, tensor, input_width, input_height,
+                             error)) {
             set_error(job.generation, error);
             return;
         }
@@ -229,7 +229,8 @@ void InferenceService::process(Job job) {
                   outputs[0].GetTensorData<float>() + output_elements,
                   depth_data.begin());
         if (!buildDepthAndNormal(depth_data, output_width, output_height,
-                                 job.image.width, job.image.height, result, error)) {
+                                 job.image.width, job.image.height, result, error,
+                                 config.invertDepth)) {
             set_error(job.generation, error);
             return;
         }
@@ -298,7 +299,6 @@ bool InferenceService::ensure_session(const std::string& model_asset_path,
             *env_, model_bytes.data(), model_bytes.size(), options);
         session_ = std::move(session);
         loaded_model_path_ = model_asset_path;
-        loaded_model_id_ = model_asset_path;
         LOGI("ORT session loaded from %s (%zu bytes)", model_asset_path.c_str(),
              model_bytes.size());
         return true;
@@ -312,7 +312,6 @@ void InferenceService::clear_session() {
     session_.reset();
     env_.reset();
     loaded_model_path_.clear();
-    loaded_model_id_.clear();
 }
 
 void InferenceService::set_error(uint64_t generation, std::string error) {

@@ -10,6 +10,7 @@ Nothing here may depend on desktop-only code or build outputs.
 | Dear ImGui | 1.92.5 | `imgui/` | `imgui/LICENSE.txt` |
 | stb_image | bundled header | `stb/stb_image.h` | public domain / MIT |
 | stb_image_resize2 | bundled header | `stb/stb_image_resize2.h` | public domain / MIT |
+| nlohmann/json | bundled single header | `json/nlohmann/json.hpp` | `json/LICENSE.MIT` |
 | ONNX Runtime Android | 1.20.0 | `onnxruntime-android-1.20.0/` | `onnxruntime-android-1.20.0/LICENSE` |
 
 ### ONNX Runtime native libraries

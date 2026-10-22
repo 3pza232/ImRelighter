@@ -31,8 +31,16 @@ Implemented:
 - Depth and normal previews copied from the validated desktop-equivalent
   pipeline: 5x5 depth median, min/max normalization, resize to source size,
   central-difference normals at depth resolution, then upscale.
-- Model settings with **Q4** as the only bundled Android model,
-  **恢复默认 Q4**, persisted selection, live model reload, and a custom ONNX file picker.
+- Model settings with **q4** as the bundled default, **恢复默认 Q4**, persisted
+  selection, multiple custom ONNX models, and a bounded scrollable model list.
+  Custom model display names use the model's parent folder; model files and
+  `preprocessor_config.json` are copied into an app-owned folder, with config
+  lookup falling back from the model directory to its parent.
+- Preprocessing follows the desktop JSON processor semantics (`size`,
+  `ensure_multiple_of`, resize/filter, rescale, normalize, mean/std and
+  `output.invert`); q4 reads the bundled top-level config.
+- After a successful manual inference, the first result switches an Original
+  view to Lit; an explicitly selected other view is preserved.
 - Bundled Source Han Sans CJK font, with validated system-font fallbacks.
 - Single-finger canvas pan, pinch zoom, light-marker dragging, thumb-only sliders,
   press-capture scrolling with cancellation, and basic inertial scrolling.

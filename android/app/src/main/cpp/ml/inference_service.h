@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "core/types.h"
+#include "ml/model_config.h"
 #include "onnxruntime_cxx_api.h"
 
 namespace imrelighter::ml {
@@ -35,7 +36,6 @@ public:
     bool take_result(DepthResult& result);
     bool take_error(std::string& error, uint64_t& generation);
     bool busy() const;
-    std::string loaded_model_id() const;
 
 private:
     struct Job {
@@ -70,7 +70,6 @@ private:
     std::unique_ptr<Ort::Env> env_;
     std::unique_ptr<Ort::Session> session_;
     std::string loaded_model_path_;
-    std::string loaded_model_id_;
 };
 
 }  // namespace imrelighter::ml

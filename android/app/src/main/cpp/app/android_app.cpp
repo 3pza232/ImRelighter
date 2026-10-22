@@ -188,7 +188,6 @@ bool AndroidApp::initialize(std::string& error) {
                 std::filesystem::path(files_dir_) / "tasks.bin", ignored);
         }
         catalog_ = std::make_unique<ModelCatalog>(assets_);
-        catalog_->load_custom_model(files_dir_);
         selected_model_ = catalog_->load_selection(files_dir_);
         if (!catalog_->available(selected_model_)) {
             selected_model_ = ModelCatalog::kDefaultId;
@@ -511,6 +510,11 @@ void AndroidApp::process_queues() {
                 show_settings_ && settings_max_.y > settings_min_.y &&
                 x >= settings_min_.x && x <= settings_max_.x &&
                 y >= settings_min_.y && y <= settings_max_.y;
+            const bool in_model_list =
+                in_settings && settings_tab_ == 1 &&
+                model_list_max_.y > model_list_min_.y &&
+                x >= model_list_min_.x && x <= model_list_max_.x &&
+                y >= model_list_min_.y && y <= model_list_max_.y;
             const bool in_lower_panel =
                 !show_settings_ && lower_panel_max_.y > lower_panel_min_.y &&
                 x >= lower_panel_min_.x && x <= lower_panel_max_.x &&
@@ -543,7 +547,7 @@ void AndroidApp::process_queues() {
                 x >= canvas_image_min_.x && x <= canvas_image_max_.x &&
                 y >= canvas_image_min_.y && y <= canvas_image_max_.y;
             const bool direct_control =
-                ui::touchHitsTarget(x, y) || in_canvas;
+                ui::touchHitsTarget(x, y) || (!show_settings_ && in_canvas);
 
             if (touch.action == 0) {
                 touch_direct_control_ = direct_control;
@@ -563,6 +567,10 @@ void AndroidApp::process_queues() {
                 settings_touch_started_ = in_settings;
                 settings_touch_start_y_ = y;
                 settings_touch_start_scroll_ = settings_scroll_;
+                model_list_touch_started_ = in_model_list;
+                model_list_touch_scrolling_ = false;
+                model_list_touch_start_y_ = y;
+                model_list_touch_start_scroll_ = model_list_scroll_;
                 settings_touch_start_time_ = touch_now;
                 settings_touch_last_move_time_ = touch_now;
                 if (direct_control) {
@@ -575,6 +583,20 @@ void AndroidApp::process_queues() {
                 }
                 if (touch_direct_control_) {
                     io.AddMousePosEvent(x, y);
+                } else if (model_list_touch_started_) {
+                    if (!model_list_touch_scrolling_ &&
+                        std::fabs(y - model_list_touch_start_y_) > touch_slop) {
+                        model_list_touch_scrolling_ = true;
+                        ui::cancelActiveControl();
+                    }
+                    if (model_list_touch_scrolling_) {
+                        model_list_scroll_ = std::clamp(
+                            model_list_touch_start_scroll_ -
+                                (y - model_list_touch_start_y_),
+                            0.0f, std::max(0.0f, model_list_scroll_max_));
+                        model_list_scroll_dirty_ = true;
+                    }
+                    continue;
                 } else if (settings_touch_started_ && in_settings) {
                     if (!settings_touch_scrolling_ &&
                         std::fabs(y - settings_touch_start_y_) > touch_slop) {
@@ -612,10 +634,21 @@ void AndroidApp::process_queues() {
                     touch_started_in_lower_ = false;
                     settings_touch_started_ = false;
                     settings_touch_scrolling_ = false;
+                    model_list_touch_started_ = false;
+                    model_list_touch_scrolling_ = false;
                     lower_scroll_velocity_ = 0.0f;
                     settings_scroll_velocity_ = 0.0f;
                     continue;
                 }
+                if (model_list_touch_scrolling_) {
+                    model_list_touch_started_ = false;
+                    model_list_touch_scrolling_ = false;
+                    settings_touch_started_ = false;
+                    settings_touch_scrolling_ = false;
+                    touch_direct_control_ = false;
+                    continue;
+                }
+                model_list_touch_started_ = false;
                 if (touch_direct_control_) {
                     io.AddMousePosEvent(x, y);
                     io.AddMouseButtonEvent(0, false);
@@ -689,9 +722,11 @@ void AndroidApp::process_queues() {
         reset_model();
     }
     if (!model_file.empty()) {
-        if (catalog_ != nullptr &&
-            catalog_->register_custom_model(files_dir_, model_file)) {
-            select_model("custom");
+        const std::string custom_id =
+            catalog_ ? catalog_->register_custom_model(files_dir_, model_file)
+                     : std::string();
+        if (!custom_id.empty()) {
+            select_model(custom_id);
         } else {
             set_status("自定义模型文件不可用");
         }
@@ -704,7 +739,6 @@ void AndroidApp::poll_inference() {
     }
     DepthResult result;
     if (inference_->take_result(result)) {
-        bool matched = false;
         for (int i = 0; i < static_cast<int>(tasks_.size()); ++i) {
             Task& task = tasks_[static_cast<size_t>(i)];
             if (task.generation != result.generation) {
@@ -713,32 +747,32 @@ void AndroidApp::poll_inference() {
             task.depth = std::move(result);
             task.depth_ready = true;
             task.busy = false;
-            matched = true;
             if (i == active_task_) {
                 depth_ = task.depth;
                 depth_ready_ = true;
                 std::string error;
-                if (!upload_texture(depth_texture_, depth_.width, depth_.height,
-                                    depth_.depth_rgba, false, error)) {
-                    set_status("深度纹理上传失败: " + error);
-                } else if (!upload_texture(normal_texture_, depth_.width,
-                                           depth_.height, depth_.normal_rgba,
-                                           false, error)) {
-                    set_status("法线纹理上传失败: " + error);
+                bool uploaded = upload_texture(depth_texture_, depth_.width,
+                                                depth_.height, depth_.depth_rgba,
+                                                false, error);
+                if (uploaded) {
+                    uploaded = upload_texture(normal_texture_, depth_.width,
+                                              depth_.height, depth_.normal_rgba,
+                                              false, error);
                 }
                 busy_ = false;
-                set_status("深度与法线已生成");
+                if (!uploaded) {
+                    set_status("纹理上传失败: " + error);
+                } else {
+                    if (view_ == ViewMode::Original) {
+                        // The first generated result is shown immediately in
+                        // the relit view; an explicit other view is kept.
+                        view_ = ViewMode::Lit;
+                        task.view = ViewMode::Lit;
+                    }
+                    set_status("深度与法线已生成");
+                }
             }
             break;
-        }
-        if (!matched && result.generation == generation_) {
-            depth_ = std::move(result);
-            depth_ready_ = true;
-            busy_ = false;
-            set_status("深度与法线已生成");
-            matched = true;
-        }
-        if (matched) {
         }
     }
     std::string error;
@@ -890,6 +924,11 @@ void AndroidApp::draw_ui(float s) {
     draw_bottom_bar(s);
 
     draw_export_menu(s);
+    if (show_settings_) {
+        // The inspector is still submitted behind the modal; do not let its
+        // slider hit targets capture touches intended for the settings list.
+        ui::clearTouchTargets();
+    }
     draw_settings(s);
 
     if (busy_) {
@@ -1335,6 +1374,10 @@ void AndroidApp::draw_lower_panel(float s) {
     }
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f * s, 10.0f * s));
     const float label_width = 108.0f * s;
+    const ModelInfo* selected_info =
+        catalog_ ? catalog_->find(selected_model_) : nullptr;
+    const char* selected_model_name =
+        selected_info != nullptr ? selected_info->name.c_str() : selected_model_.c_str();
     if (selected_light_ < 0 ||
         selected_light_ >= static_cast<int>(lights_.size())) {
         selected_light_ = lights_.empty() ? -1 : 0;
@@ -1343,7 +1386,7 @@ void AndroidApp::draw_lower_panel(float s) {
     {
         ui::Card image_card("##image_card", 12.0f * s, ui::palette().panel2);
         ui::sectionTitle(ui::tr("图像与深度", "Image & Depth"));
-        ui::labelValueRow(ui::tr("当前模型", "Model"), selected_model_.c_str(), label_width);
+        ui::labelValueRow(ui::tr("当前模型", "Model"), selected_model_name, label_width);
         ui::labelValueRow(ui::tr("推理后端", "Backend"), "CPU", label_width);
         ui::labelValueRow(ui::tr("深度状态", "Depth Status"),
                           depth_ready_ ? ui::tr("已生成", "Ready") : (busy_ ? ui::tr("生成中…", "Generating…") : ui::tr("未生成", "Not generated")),
@@ -1567,7 +1610,7 @@ void AndroidApp::draw_lower_panel(float s) {
     {
         ui::Card model_card("##model_card", 12.0f * s, ui::palette().panel2);
         ui::sectionTitle(ui::tr("模型与状态", "Model & Status"));
-        ui::labelValueRow(ui::tr("当前模型", "Model"), selected_model_.c_str(), label_width);
+        ui::labelValueRow(ui::tr("当前模型", "Model"), selected_model_name, label_width);
         const ModelInfo* model = catalog_ ? catalog_->find(selected_model_) : nullptr;
         if (model != nullptr) {
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
@@ -1619,7 +1662,7 @@ void AndroidApp::draw_bottom_bar(float s) {
         ImGui::SetCursorPos(ImVec2(12.0f * s, 5.0f * s));
         ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 12.0f * s);
         const std::string line =
-            (image_.valid() ? image_name_ : ui::tr(ui::tr("未导入图片", "No image"), "No image")) + " · " + status_;
+            (image_.valid() ? image_name_ : ui::tr("未导入图片", "No image")) + " · " + status_;
         ImGui::TextDisabled("%s", line.c_str());
         ImGui::PopTextWrapPos();
     }
@@ -1717,9 +1760,9 @@ void AndroidApp::draw_settings(float s) {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     const float settings_width = std::min(680.0f * s, display.x - 24.0f * s);
     ImGui::SetNextWindowSizeConstraints(ImVec2(settings_width, 0.0f),
-                                        ImVec2(settings_width, display.y - 24.0f * s));
-    ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f), ImGuiCond_Appearing,
-                            ImVec2(0.5f, 0.5f));
+                                        ImVec2(settings_width, display.y - 48.0f * s));
+    ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f * s);
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 12.0f * s);
     bool open = show_settings_;
@@ -1838,7 +1881,28 @@ void AndroidApp::draw_settings(float s) {
     } else if (settings_tab_ == 1) {
         ui::sectionTitle(ui::tr("深度模型", "Depth Model"));
         if (catalog_ != nullptr) {
-            for (const ModelInfo& model : catalog_->models()) {
+            const auto& models = catalog_->models();
+            const ImGuiStyle& style = ImGui::GetStyle();
+            const float row_stride = 52.0f * s + style.ItemSpacing.y;
+            const float content_height =
+                row_stride * static_cast<float>(models.size()) +
+                style.WindowPadding.y * 2.0f;
+            const float max_list_height = std::min(240.0f * s, display.y * 0.45f);
+            const float list_height = std::min(content_height, max_list_height);
+            ImGui::BeginChild("##model_list", ImVec2(0.0f, list_height),
+                              ImGuiChildFlags_Borders |
+                                  ImGuiChildFlags_AlwaysUseWindowPadding);
+            model_list_min_ = ImGui::GetWindowPos();
+            model_list_max_ = ImVec2(model_list_min_.x + ImGui::GetWindowWidth(),
+                                     model_list_min_.y + ImGui::GetWindowHeight());
+            bool scroll_applied = false;
+            if (model_list_touch_scrolling_ || model_list_scroll_dirty_) {
+                ImGui::SetScrollY(
+                    std::clamp(model_list_scroll_, 0.0f, ImGui::GetScrollMaxY()));
+                model_list_scroll_dirty_ = false;
+                scroll_applied = true;
+            }
+            for (const ModelInfo& model : models) {
                 ImGui::PushID(model.id.c_str());
                 if (ImGui::Selectable(("##model_row_" + model.id).c_str(),
                                       selected_model_ == model.id, 0,
@@ -1853,17 +1917,41 @@ void AndroidApp::draw_settings(float s) {
                 {
                     ui::FontScale small(0.72f);
                     ImGui::TextDisabled("%s%s", model.description.c_str(),
-                                        model.available ? "" : "（未打包）");
+                                        model.available
+                                            ? ""
+                                            : ui::tr("（未打包）", " (not bundled)"));
                 }
                 ImGui::EndGroup();
                 ImGui::PopID();
             }
+            model_list_scroll_max_ = ImGui::GetScrollMaxY();
+            if (!model_list_touch_scrolling_ && !scroll_applied) {
+                model_list_scroll_ =
+                    std::clamp(ImGui::GetScrollY(), 0.0f, model_list_scroll_max_);
+            }
+            ImGui::EndChild();
         }
         const ModelInfo* active = catalog_ ? catalog_->find(selected_model_) : nullptr;
         if (active != nullptr) {
-            ui::labelValueRow("模型文件", active->asset_path.c_str(), 110.0f * s);
-            ui::labelValueRow("模型类型", "Q4 · 4-bit 权重 · FP32 激活", 110.0f * s);
-            ui::labelValueRow("状态", active->available ? "可用" : "未打包", 110.0f * s);
+            const bool is_default = active->id == ModelCatalog::kDefaultId;
+            const std::filesystem::path model_path(active->asset_path);
+            const std::string shown_path =
+                is_default
+                    ? active->asset_path
+                    : (model_path.parent_path().filename().string() + "/" +
+                       model_path.filename().string());
+            ui::labelValueRow(ui::tr("模型文件", "Model File"), shown_path.c_str(),
+                              110.0f * s);
+            ui::labelValueRow(
+                ui::tr("模型类型", "Model Type"),
+                is_default ? ui::tr("Q4 · 4-bit 权重 · FP32 激活",
+                                    "Q4 · 4-bit weights · FP32 activations")
+                           : ui::tr("自定义 ONNX · 本地文件", "Custom ONNX · local file"),
+                110.0f * s);
+            ui::labelValueRow(ui::tr("状态", "Status"),
+                              active->available ? ui::tr("可用", "Available")
+                                                : ui::tr("未打包", "Not bundled"),
+                              110.0f * s);
         }
         ImGui::Spacing();
         if (ui::centeredButton(ui::tr("选择模型文件", "Choose Model File"),
@@ -1878,11 +1966,14 @@ void AndroidApp::draw_settings(float s) {
         }
     } else {
         ui::sectionTitle(ui::tr("关于", "About"));
-        ui::labelValueRow("版本", "0.1.0", 100.0f * s);
-        ui::labelValueRow("作者", "pza", 100.0f * s);
-        ui::labelValueRow("渲染", "OpenGL ES 3.1 + ImGui", 100.0f * s);
-        ui::labelValueRow("深度模型", "Depth Anything V2 Small · Q4", 100.0f * s);
-        ui::labelValueRow("推理运行时", "ONNX Runtime 1.20.0 · CPU", 100.0f * s);
+        ui::labelValueRow(ui::tr("版本", "Version"), "0.1.0", 100.0f * s);
+        ui::labelValueRow(ui::tr("作者", "Author"), "pza", 100.0f * s);
+        ui::labelValueRow(ui::tr("渲染", "Renderer"), "OpenGL ES 3.1 + ImGui",
+                          100.0f * s);
+        ui::labelValueRow(ui::tr("深度模型", "Depth Model"),
+                          "Depth Anything V2 Small · Q4", 100.0f * s);
+        ui::labelValueRow(ui::tr("推理运行时", "Runtime"),
+                          "ONNX Runtime 1.20.0 · CPU", 100.0f * s);
         ImGui::Spacing();
     }
 
@@ -2317,17 +2408,18 @@ void AndroidApp::select_model(const std::string& id) {
     }
     const ModelInfo* info = catalog_->find(id);
     if (info == nullptr) {
-        set_status("未知模型: " + id);
+        set_status(ui::tr("未知模型: ", "Unknown model: ") + id);
         return;
     }
     if (!info->available) {
-        set_status("模型未内置: " + id);
+        set_status(ui::tr("模型未内置: ", "Model is not available: ") + id);
         return;
     }
     selected_model_ = id;
     catalog_->save_selection(files_dir_, id);
     show_settings_ = false;
-    set_status("已选择模型: " + id + "，请生成深度与法线");
+    set_status(ui::tr("已选择模型: ", "Model selected: ") + info->name +
+               ui::tr("，请生成深度与法线", "; generate depth to continue"));
 }
 
 void AndroidApp::reset_model() {

@@ -9,6 +9,7 @@ namespace imrelighter::ml {
 
 bool buildDepthAndNormal(const std::vector<float>& raw_depth, int raw_width,
                          int raw_height, int target_width, int target_height,
-                         DepthResult& result, std::string& error);
+                         DepthResult& result, std::string& error,
+                         bool invert_depth = false);
 
 }  // namespace imrelighter::ml
