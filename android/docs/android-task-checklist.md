@@ -6,9 +6,10 @@ not lose requirements.
 ## Current build
 
 - Source: `android/`
-- APK: `android/dist/ImRelighterAndroid-debug.apk`
-- SHA-256: `D20CC50D71DF0BE2C0D3B6859B6B6335E9788ED849AB97C39023871301E8FD88`
-- Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleDebug --offline --no-daemon`
+- APK: `android/dist/ImRelighterAndroid-release.apk`
+- SHA-256: `78B86035E0498566BE0B2B2500E508753445B4DF31A566BDE64F2D3DBCF2ED7A`
+- Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleRelease --offline --no-daemon -x lintVitalAnalyzeRelease -x lintVitalRelease`
+- Signing: `ImRelighter.jks`, alias `imrelighter`, v2; credentials in ignored `keystore.properties`
 
 ## Fixes in the current build
 

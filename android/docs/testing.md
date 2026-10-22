@@ -14,10 +14,12 @@ Android 仓库目前没有桌面版同等的 CTest/GPU 金图像测试套件。�
 ```powershell
 cd android
 $env:GRADLE_USER_HOME='D:\Android\.gradle'
-.\gradlew.bat assembleDebug --offline --no-daemon
+.\gradlew.bat assembleRelease --offline --no-daemon `
+  -x lintVitalAnalyzeRelease -x lintVitalRelease
 ```
 
-期望：`exit=0`，生成 `app/build/outputs/apk/debug/app-debug.apk`；允许 SDK XML 版本警告。
+期望：`exit=0`，生成已签名的 `app/build/outputs/apk/release/app-release.apk`；
+允许 SDK XML 版本警告。
 
 ## 模拟器功能清单
 

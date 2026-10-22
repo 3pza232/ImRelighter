@@ -180,20 +180,28 @@ Runtime models are synchronized from the repository root by the Gradle
 ```powershell
 cd C:\Users\86136\Desktop\output\ImRelighter\android
 $env:GRADLE_USER_HOME = 'D:\Android\.gradle'
-.\gradlew.bat assembleDebug --offline --no-daemon
+.\gradlew.bat assembleRelease --no-daemon
+```
+
+For an offline build whose lint artifacts are not cached:
+
+```powershell
+.\gradlew.bat assembleRelease --offline --no-daemon `
+  -x lintVitalAnalyzeRelease -x lintVitalRelease
 ```
 
 Toolchain: JDK 17, Gradle 9.1.0, AGP 9.0.1, compile/target SDK 36, minSdk 26,
 NDK 26.3.11579264, CMake 3.22.1, C++20, GLES 3.1.
 
-Output: `app/build/outputs/apk/debug/app-debug.apk`. The current debug APK is
-about 110 MB because it packages the Q4 model, ONNX Runtime and the bundled
-Source Han Sans font; release work should split ABIs and subset the font.
+Release signing reads `keystore.properties` (ignored by git): keystore
+`ImRelighter.jks`, alias `imrelighter`. The signed APK is copied to
+`dist/ImRelighterAndroid-release.apk`, about 82 MB because it packages the Q4
+model, ONNX Runtime and the bundled Source Han Sans font.
 
 ## Run
 
 ```powershell
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb install -r dist\ImRelighterAndroid-release.apk
 adb shell am start -n com.imrelighter.android/.MainActivity
 adb logcat -s ImRelighterAndroid AndroidRuntime
 ```

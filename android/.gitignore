@@ -12,6 +12,11 @@ captures/
 .idea/
 *.iml
 
+# Signing material (never commit)
+keystore.properties
+*.jks
+*.keystore
+
 # Output
 dist/
 

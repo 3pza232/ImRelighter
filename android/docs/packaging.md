@@ -5,10 +5,12 @@
 Android 版本目前以 APK 分发：
 
 - Debug：`android/app/build/outputs/apk/debug/app-debug.apk`
-- Release：`android/app/build/outputs/apk/release/app-release-unsigned.apk`
-- 发布归档目录：`android/dist/`
+- Release：`android/app/build/outputs/apk/release/app-release.apk`
+- 发布归档：`android/dist/ImRelighterAndroid-release.apk`
+- SHA-256：`android/dist/ImRelighterAndroid-release.apk.sha256`
 
-Release APK 需要自行签名后才能安装到设备。Debug APK 可直接安装用于测试。
+Release APK 使用 `ImRelighter.jks` 签名（alias `imrelighter`），已通过
+`apksigner verify`。Debug APK 只用于开发测试。
 
 ## APK 内容
 
@@ -32,18 +34,14 @@ Release APK 需要自行签名后才能安装到设备。Debug APK 可直接安�
 - `versionName = "0.1.0"`
 - `applicationId = "com.imrelighter.android"`
 
-正式发布前应更新版本号，并配置 release signingConfig；当前 release 构建为 unsigned。
+正式发布前应更新版本号。Release signingConfig 从 `android/keystore.properties`
+读取 keystore 路径、alias 和密码；该文件与 `*.jks` 不提交仓库。当前签名方案为
+APK Signature Scheme v2，最低 API 26 可直接安装。
 
 ## 安装
 
 ```powershell
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-或：
-
-```powershell
-adb install -r android/dist/ImRelighterAndroid.apk
+adb install -r android/dist/ImRelighterAndroid-release.apk
 ```
 
 设备要求：

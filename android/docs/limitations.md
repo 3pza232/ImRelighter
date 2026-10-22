@@ -6,7 +6,7 @@
 
 - 仅提供 Android 实现；当前 APK 为 `arm64-v8a` + `x86_64`。
 - 需要 OpenGL ES 3.1；极旧设备或异常驱动可能无法创建上下文。
-- Release APK 当前未签名；发布前需要配置签名。
+- Release APK 使用本机 `ImRelighter.jks` 签名；签名材料不纳入 git，换机构建需重新提供。
 - 只在 x86_64 SwiftShader 模拟器完成系统化验证；物理 arm64 最终回归仍待完成。
 
 ## 图片

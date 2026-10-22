@@ -32,11 +32,24 @@ $env:GRADLE_USER_HOME='D:\Android\.gradle'
 .\gradlew.bat assembleDebug --no-daemon --stacktrace
 ```
 
-Release：
+Release（已配置签名）：
 
 ```powershell
 .\gradlew.bat assembleRelease
 ```
+
+离线且本地未缓存 lint 依赖时：
+
+```powershell
+.\gradlew.bat assembleRelease --offline --no-daemon `
+  -x lintVitalAnalyzeRelease -x lintVitalRelease
+```
+
+Release 签名从根目录 `keystore.properties` 读取（该文件与 `*.jks` 均被 git 忽略）。当前配置：
+
+- keystore：`android/ImRelighter.jks`
+- alias：`imrelighter`
+- 密码：构建机本地 `keystore.properties` 保存，不提交仓库
 
 ## 原生构建
 
@@ -60,7 +73,8 @@ CMake 生成 `libimrelighter.so`，链接 ONNX Runtime Android 1.20.0 预编译�
 
 ```text
 android/app/build/outputs/apk/debug/app-debug.apk
-android/app/build/outputs/apk/release/app-release-unsigned.apk
+android/app/build/outputs/apk/release/app-release.apk
+android/dist/ImRelighterAndroid-release.apk
 ```
 
 APK 包含：
