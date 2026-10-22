@@ -37,8 +37,8 @@ Implemented:
   mirrors all ONNX files/configs into app storage, and displays each custom model
   by its parent folder name. Selecting a single ONNX file also copies sibling or
   parent `preprocessor_config.json` when accessible.
-- The phone status bar is visible; content is inset below it and the app bottom
-  bar is compacted to preserve canvas space.
+- The phone status bar is visible; the native top bar is shifted below its inset
+  and the app bottom bar is compacted to 52dp to preserve canvas space.
 - English mode covers native status text, model descriptions, settings labels,
   errors, busy indicators, export menu and Kotlin toasts.
 - Preprocessing follows the desktop JSON processor semantics (`size`,

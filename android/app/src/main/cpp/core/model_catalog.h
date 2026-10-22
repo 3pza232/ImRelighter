@@ -25,6 +25,7 @@ public:
     // Returns the stable model id on success, or an empty string on failure.
     std::string register_custom_model(const std::string& files_dir,
                                       const std::string& absolute_path);
+    bool remove_custom_model(const std::string& files_dir, const std::string& id);
     std::string load_selection(const std::string& files_dir) const;
     bool save_selection(const std::string& files_dir, const std::string& id) const;
 

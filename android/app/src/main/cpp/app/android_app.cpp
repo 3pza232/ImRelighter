@@ -424,6 +424,11 @@ void AndroidApp::set_model_storage_label(const std::string& label) {
     pending_model_storage_label_ = label;
 }
 
+void AndroidApp::set_system_insets(int top, int bottom) {
+    system_inset_top_.store(std::max(0, top));
+    system_inset_bottom_.store(std::max(0, bottom));
+}
+
 void AndroidApp::queue_reset_model() {
     std::lock_guard<std::mutex> lock(queue_mutex_);
     pending_reset_ = true;
@@ -564,6 +569,12 @@ void AndroidApp::process_queues() {
                 continue;
             }
 
+            if (touch.action == 1 && model_press_candidate_ &&
+                (std::fabs(x - model_press_pos_.x) > touch_slop ||
+                 std::fabs(y - model_press_pos_.y) > touch_slop)) {
+                model_press_candidate_ = false;
+            }
+
             const bool in_drawer =
                 task_drawer_open_ && !show_settings_ &&
                 task_list_max_.y > task_list_min_.y &&
@@ -622,6 +633,7 @@ void AndroidApp::process_queues() {
                 if (touch.action == 0) {
                     settings_touch_started_ = false;
                     settings_touch_scrolling_ = false;
+                    model_press_candidate_ = false;
                     touch_gesture_cancelled_ = false;
                 } else if (touch.action == 1 && settings_touch_started_) {
                     settings_touch_scrolling_ = false;
@@ -646,6 +658,23 @@ void AndroidApp::process_queues() {
                 ui::touchHitsTarget(x, y) || (!show_settings_ && in_canvas);
 
             if (touch.action == 0) {
+                model_press_candidate_ = false;
+                model_long_press_triggered_ = false;
+                if (show_settings_ && settings_tab_ == 1) {
+                    for (const ModelRowHit& row : model_rows_) {
+                        if (row.id == ModelCatalog::kDefaultId) {
+                            continue;
+                        }
+                        if (x >= row.rect.x && x <= row.rect.z && y >= row.rect.y &&
+                            y <= row.rect.w) {
+                            model_press_candidate_ = true;
+                            model_press_id_ = row.id;
+                            model_press_pos_ = ImVec2(x, y);
+                            model_press_time_ = touch_now;
+                            break;
+                        }
+                    }
+                }
                 touch_direct_control_ = direct_control;
                 if (!direct_control) {
                     ui::cancelActiveControl();
@@ -736,6 +765,17 @@ void AndroidApp::process_queues() {
                     settings_scroll_velocity_ = 0.0f;
                     continue;
                 }
+                if (model_long_press_triggered_) {
+                    model_long_press_triggered_ = false;
+                    model_press_candidate_ = false;
+                    model_list_touch_started_ = false;
+                    model_list_touch_scrolling_ = false;
+                    settings_touch_started_ = false;
+                    settings_touch_scrolling_ = false;
+                    touch_direct_control_ = false;
+                    continue;
+                }
+                model_press_candidate_ = false;
                 if (model_list_touch_scrolling_) {
                     model_list_touch_started_ = false;
                     model_list_touch_scrolling_ = false;
@@ -995,8 +1035,25 @@ void AndroidApp::apply_material_preset(int preset) {
     }
 }
 
+void AndroidApp::update_model_long_press() {
+    if (!model_press_candidate_ || !show_settings_ || settings_tab_ != 1 ||
+        touch_scrolling_ || settings_touch_scrolling_ ||
+        model_list_touch_scrolling_) {
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration<double>(now - model_press_time_).count() < 0.55) {
+        return;
+    }
+    model_press_candidate_ = false;
+    model_long_press_triggered_ = true;
+    model_delete_target_ = model_press_id_;
+    model_delete_popup_requested_ = true;
+}
+
 void AndroidApp::draw_ui(float s) {
     ui::clearTouchTargets();
+    update_model_long_press();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
@@ -1010,13 +1067,17 @@ void AndroidApp::draw_ui(float s) {
     ImGui::PopStyleVar(2);
 
     const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float inset_top = static_cast<float>(system_inset_top_.load());
+    const float inset_bottom = static_cast<float>(system_inset_bottom_.load());
     const float top_height = 58.0f * s;
-    const float bottom_height = 60.0f * s;
-    const float body_height = std::max(0.0f, display.y - top_height - bottom_height);
+    const float bottom_height = 52.0f * s;
+    const float body_height = std::max(
+        0.0f, display.y - inset_top - top_height - inset_bottom - bottom_height);
 
+    ImGui::SetCursorPos(ImVec2(0.0f, inset_top));
     draw_top_bar(s);
 
-    ImGui::SetCursorPos(ImVec2(0.0f, top_height));
+    ImGui::SetCursorPos(ImVec2(0.0f, inset_top + top_height));
     ImGui::BeginChild("##body", ImVec2(0.0f, body_height), 0,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     draw_task_rail(s);
@@ -1034,7 +1095,7 @@ void AndroidApp::draw_ui(float s) {
     }
     ImGui::EndChild();
 
-    ImGui::SetCursorPos(ImVec2(0.0f, display.y - bottom_height));
+    ImGui::SetCursorPos(ImVec2(0.0f, display.y - inset_bottom - bottom_height));
     draw_bottom_bar(s);
 
     draw_export_menu(s);
@@ -1047,14 +1108,17 @@ void AndroidApp::draw_ui(float s) {
 
     if (busy_) {
         ImGui::GetForegroundDrawList()->AddRectFilled(
-            ImVec2(display.x * 0.5f - 118.0f * s, display.y - bottom_height - 66.0f * s),
-            ImVec2(display.x * 0.5f + 118.0f * s, display.y - bottom_height - 26.0f * s),
+            ImVec2(display.x * 0.5f - 118.0f * s,
+                   display.y - inset_bottom - bottom_height - 66.0f * s),
+            ImVec2(display.x * 0.5f + 118.0f * s,
+                   display.y - inset_bottom - bottom_height - 26.0f * s),
             IM_COL32(22, 26, 34, 232), 18.0f * s);
         const char* text = ui::tr("正在生成深度与法线…", "Generating depth and normals…");
         const ImVec2 text_size = ImGui::CalcTextSize(text);
         ImGui::GetForegroundDrawList()->AddText(
             ImVec2(display.x * 0.5f - text_size.x * 0.5f,
-                   display.y - bottom_height - 46.0f * s - text_size.y * 0.5f),
+                   display.y - inset_bottom - bottom_height - 46.0f * s -
+                       text_size.y * 0.5f),
             IM_COL32(232, 179, 106, 255), text);
     }
 
@@ -1770,11 +1834,11 @@ void AndroidApp::draw_lower_panel(float s) {
 
 void AndroidApp::draw_bottom_bar(float s) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ui::palette().panel);
-    ImGui::BeginChild("##bottombar", ImVec2(0.0f, 60.0f * s), ImGuiChildFlags_Borders,
+    ImGui::BeginChild("##bottombar", ImVec2(0.0f, 52.0f * s), ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
-        ui::FontScale micro(0.84f);
-        ImGui::SetCursorPos(ImVec2(12.0f * s, 3.0f * s));
+        ui::FontScale micro(0.80f);
+        ImGui::SetCursorPos(ImVec2(12.0f * s, 2.0f * s));
         ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 12.0f * s);
         const std::string line =
             (image_.valid() ? localizedImportedName(image_name_)
@@ -1875,11 +1939,14 @@ void AndroidApp::draw_settings(float s) {
         ImGui::OpenPopup("##settings");
     }
     const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float inset_top = static_cast<float>(system_inset_top_.load());
     const float settings_width = std::min(680.0f * s, display.x - 24.0f * s);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(settings_width, 0.0f),
-                                        ImVec2(settings_width, display.y - 48.0f * s));
-    ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(
+        ImVec2(settings_width, 0.0f),
+        ImVec2(settings_width, display.y - inset_top - 24.0f * s));
+    ImGui::SetNextWindowPos(
+        ImVec2(display.x * 0.5f, inset_top + (display.y - inset_top) * 0.5f),
+        ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f * s);
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 12.0f * s);
     bool open = show_settings_;
@@ -2027,6 +2094,7 @@ void AndroidApp::draw_settings(float s) {
                 model_list_scroll_dirty_ = false;
                 scroll_applied = true;
             }
+            model_rows_.clear();
             for (const ModelInfo& model : models) {
                 ImGui::PushID(model.id.c_str());
                 if (ImGui::Selectable(("##model_row_" + model.id).c_str(),
@@ -2034,6 +2102,10 @@ void AndroidApp::draw_settings(float s) {
                                       ImVec2(0.0f, 52.0f * s))) {
                     select_model(model.id);
                 }
+                const ImVec2 row_min = ImGui::GetItemRectMin();
+                const ImVec2 row_max = ImGui::GetItemRectMax();
+                model_rows_.push_back(
+                    {model.id, ImVec4(row_min.x, row_min.y, row_max.x, row_max.y)});
                 ImGui::SameLine();
                 ImGui::BeginGroup();
                 ImGui::TextColored(selected_model_ == model.id ? ui::palette().accent
@@ -2056,6 +2128,47 @@ void AndroidApp::draw_settings(float s) {
                     std::clamp(ImGui::GetScrollY(), 0.0f, model_list_scroll_max_);
             }
             ImGui::EndChild();
+        }
+        if (model_delete_popup_requested_) {
+            ImGui::SetNextWindowPos(model_press_pos_, ImGuiCond_Appearing);
+            ImGui::OpenPopup("##model_delete");
+            model_delete_popup_requested_ = false;
+        }
+        if (ImGui::BeginPopup("##model_delete")) {
+            const ModelInfo* target =
+                catalog_ ? catalog_->find(model_delete_target_) : nullptr;
+            ImGui::TextUnformatted(
+                ui::tr("删除模型记录？", "Delete model record?"));
+            if (target != nullptr) {
+                ImGui::TextDisabled("%s", target->name.c_str());
+            }
+            ImGui::TextDisabled(
+                "%s", ui::tr("不会删除磁盘上的模型文件。",
+                             "The model file on disk is not deleted."));
+            ImGui::Separator();
+            if (ImGui::Button(ui::tr("删除记录", "Delete Record"),
+                              ImVec2(132.0f * s, 34.0f * s))) {
+                if (catalog_ &&
+                    catalog_->remove_custom_model(files_dir_, model_delete_target_)) {
+                    if (selected_model_ == model_delete_target_) {
+                        selected_model_ = ModelCatalog::kDefaultId;
+                        catalog_->save_selection(files_dir_, selected_model_);
+                        set_status(ui::tr("已删除模型记录，已恢复默认 Q4",
+                                          "Model record removed; default Q4 restored"));
+                    } else {
+                        set_status(ui::tr("已删除模型记录", "Model record removed"));
+                    }
+                }
+                model_delete_target_.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(ui::tr("取消", "Cancel"),
+                              ImVec2(92.0f * s, 34.0f * s))) {
+                model_delete_target_.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
         const ModelInfo* active = catalog_ ? catalog_->find(selected_model_) : nullptr;
         if (active != nullptr) {

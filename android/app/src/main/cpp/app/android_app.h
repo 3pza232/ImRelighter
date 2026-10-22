@@ -3,12 +3,14 @@
 #include <android/asset_manager.h>
 #include <GLES3/gl3.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/model_catalog.h"
@@ -40,6 +42,7 @@ public:
     void queue_model_file(const std::string& absolute_path);
     void queue_model_files(std::vector<std::string> absolute_paths);
     void set_model_storage_label(const std::string& label);
+    void set_system_insets(int top, int bottom);
     void queue_reset_model();
     bool handle_back();
 
@@ -80,6 +83,11 @@ private:
         GLuint thumbnail_texture = 0;
     };
 
+    struct ModelRowHit {
+        std::string id;
+        ImVec4 rect;  // min.x, min.y, max.x, max.y
+    };
+
     void process_queues();
     void poll_inference();
     void draw_ui(float scale);
@@ -94,6 +102,7 @@ private:
     void draw_lower_panel(float scale);
     void draw_settings(float scale);
     void draw_export_menu(float scale);
+    void update_model_long_press();
     void draw_empty_canvas(float scale);
     void draw_light_markers(float scale);
     void draw_image_fit(GLuint texture, const ImVec2& uv0, const ImVec2& uv1,
@@ -127,6 +136,8 @@ private:
     float density_ = 1.0f;
     int surface_width_ = 0;
     int surface_height_ = 0;
+    std::atomic<int> system_inset_top_{0};
+    std::atomic<int> system_inset_bottom_{0};
     bool initialized_ = false;
 
     std::unique_ptr<ModelCatalog> catalog_;
@@ -217,6 +228,14 @@ private:
     bool model_list_touch_started_ = false;
     float model_list_touch_start_y_ = 0.0f;
     float model_list_touch_start_scroll_ = 0.0f;
+    std::vector<ModelRowHit> model_rows_;
+    std::string model_press_id_;
+    ImVec2 model_press_pos_ = ImVec2(0.0f, 0.0f);
+    std::chrono::steady_clock::time_point model_press_time_{};
+    bool model_press_candidate_ = false;
+    bool model_long_press_triggered_ = false;
+    bool model_delete_popup_requested_ = false;
+    std::string model_delete_target_;
     bool pending_settings_click_ = false;
     bool pending_settings_release_ = false;
     float settings_click_x_ = 0.0f;

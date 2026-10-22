@@ -6,8 +6,8 @@ not lose requirements.
 ## Current build
 
 - Source: `android/`
-- APK: `android/dist/ImRelighterAndroid-folder-i18n.apk`
-- SHA-256: `1712329F0EDFCC8D94F150BBC2275FE8ED63FF572C9030C9869C29F10AA524D8`
+- APK: `android/dist/ImRelighterAndroid-inset-model-delete.apk`
+- SHA-256: `2B4A81FF98A8830B668386716D6868F3B2B0CF9F4984187F99F7C0618C230886`
 - Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleDebug --offline --no-daemon`
 
 ## Fixes in the current build
@@ -71,7 +71,7 @@ not lose requirements.
 - Model storage: SAF folder picker persists read permission and mirrors every
   ONNX/config file in the chosen tree; the folder name is shown in Settings.
 - System UI: the phone status bar is visible, content is inset below it, and the
-  app bottom status bar is reduced to 60dp.
+  app bottom status bar is reduced to 52dp.
 - English mode: native statuses, busy/error/export strings, model descriptions,
   settings labels and Kotlin toasts are localized; legacy Chinese statuses are
   translated when the language is switched at runtime.

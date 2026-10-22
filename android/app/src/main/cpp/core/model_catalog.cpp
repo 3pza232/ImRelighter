@@ -126,6 +126,24 @@ std::string ModelCatalog::register_custom_model(
     return id;
 }
 
+bool ModelCatalog::remove_custom_model(const std::string& files_dir,
+                                       const std::string& id) {
+    if (id.rfind(kCustomPrefix, 0) != 0) {
+        return false;
+    }
+    const auto before = models_.size();
+    models_.erase(std::remove_if(models_.begin(), models_.end(),
+                                 [&](const ModelInfo& model) {
+                                     return model.id == id;
+                                 }),
+                  models_.end());
+    if (models_.size() == before) {
+        return false;
+    }
+    saveCustomModels(files_dir, models_);
+    return true;
+}
+
 void ModelCatalog::load_custom_model(const std::string& files_dir) {
     // Keep q4 and any already registered models; load each persisted custom
     // path once. The old single-path file is still accepted for upgrades.

@@ -102,6 +102,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 .getString("model_storage_label", null)
                 ?: tr("应用内部存储", "App storage")
             nativeSetModelStorage(savedStorage)
+            window.decorView.setOnApplyWindowInsetsListener { _, insets ->
+                val top = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    insets.getInsets(WindowInsets.Type.statusBars()).top
+                } else {
+                    @Suppress("DEPRECATION") insets.systemWindowInsetTop
+                }
+                val bottom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    insets.getInsets(WindowInsets.Type.navigationBars()).bottom
+                } else {
+                    @Suppress("DEPRECATION") insets.systemWindowInsetBottom
+                }
+                nativeSetSystemInsets(top, bottom)
+                insets
+            }
+            window.decorView.requestApplyInsets()
             Log.i(TAG, "native initialized")
         } catch (error: Throwable) {
             Log.e(TAG, "native initialization failed", error)
@@ -147,9 +162,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun enableImmersiveMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Keep the status bar readable, but reclaim the navigation-bar
-            // area for the canvas. Content is inset below the status bar.
-            window.setDecorFitsSystemWindows(true)
+            // Draw edge-to-edge and apply the status-bar inset inside the
+            // native UI. This avoids OEMs that ignore decor fits and let the
+            // status bar overlap the app's top bar.
+            window.setDecorFitsSystemWindows(false)
             val controller = window.insetsController ?: return
             controller.show(WindowInsets.Type.statusBars())
             controller.hide(WindowInsets.Type.navigationBars())
@@ -772,6 +788,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private external fun nativeSelectModelFile(path: String)
     private external fun nativeRegisterModelFiles(paths: Array<String>)
     private external fun nativeSetModelStorage(label: String)
+    private external fun nativeSetSystemInsets(top: Int, bottom: Int)
     private external fun nativeResetModel()
     private external fun nativeClearSession()
     private external fun nativeShutdown()

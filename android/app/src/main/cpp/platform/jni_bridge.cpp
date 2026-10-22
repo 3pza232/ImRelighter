@@ -8,6 +8,7 @@
 #include <jni.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -38,6 +39,8 @@ jmethodID g_export_method = nullptr;
 AAssetManager* g_assets = nullptr;
 std::string g_files_dir;
 std::string g_model_storage_label;
+std::atomic<int> g_system_inset_top{0};
+std::atomic<int> g_system_inset_bottom{0};
 float g_density = 1.0f;
 
 std::mutex g_app_mutex;
@@ -382,6 +385,8 @@ void render_thread_main() {
                         if (!g_model_storage_label.empty()) {
                             g_app->set_model_storage_label(g_model_storage_label);
                         }
+                        g_app->set_system_insets(g_system_inset_top.load(),
+                                                 g_system_inset_bottom.load());
                         std::vector<uint8_t> pending;
                         int pending_width = 0;
                         int pending_height = 0;
@@ -657,6 +662,17 @@ Java_com_imrelighter_android_MainActivity_nativeSetModelStorage(
     g_model_storage_label = value;
     if (g_app) {
         g_app->set_model_storage_label(value);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_imrelighter_android_MainActivity_nativeSetSystemInsets(
+    JNIEnv*, jobject, jint top, jint bottom) {
+    g_system_inset_top.store(std::max(0, static_cast<int>(top)));
+    g_system_inset_bottom.store(std::max(0, static_cast<int>(bottom)));
+    std::lock_guard<std::mutex> lock(g_app_mutex);
+    if (g_app) {
+        g_app->set_system_insets(top, bottom);
     }
 }
 
