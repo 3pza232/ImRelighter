@@ -124,8 +124,8 @@ void main() {
     vec4 source = texture(uColor, vUv);
     vec3 base = linearize(source.rgb);
     float height = texture(uHeight, vUv).r;
-    // The normal pass writes an FBO stored bottom-up; flip V only here.
-    vec2 normalUv = vec2(vUv.x, 1.0 - vUv.y);
+    // The Android normal target is already stored in display orientation.
+    vec2 normalUv = vUv;
     vec4 normalSample = texture(uNormal, normalUv);
     vec3 n = normalize(normalSample.rgb * 2.0 - 1.0);
     float edgeMask = clamp(normalSample.a, 0.0, 1.0);

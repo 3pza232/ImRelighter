@@ -63,12 +63,11 @@ bool buildDepthAndNormal(const std::vector<float>& raw_depth, int raw_width,
         }
     }
 
-    const std::vector<float> filtered =
-        medianFilterDepth(sanitized, raw_width, raw_height, 2);
-
+    // Desktop postprocess does not median-filter the model depth. The normal
+    // shader has its own optional 3x3 denoise controlled by the smooth setting.
     float minimum = std::numeric_limits<float>::max();
     float maximum = -std::numeric_limits<float>::max();
-    for (const float value : filtered) {
+    for (const float value : sanitized) {
         minimum = std::min(minimum, value);
         maximum = std::max(maximum, value);
     }
@@ -78,9 +77,9 @@ bool buildDepthAndNormal(const std::vector<float>& raw_depth, int raw_width,
         return false;
     }
 
-    std::vector<float> normalized_raw(filtered.size());
-    for (size_t i = 0; i < filtered.size(); ++i) {
-        float value = std::clamp((filtered[i] - minimum) / span, 0.0f, 1.0f);
+    std::vector<float> normalized_raw(sanitized.size());
+    for (size_t i = 0; i < sanitized.size(); ++i) {
+        float value = std::clamp((sanitized[i] - minimum) / span, 0.0f, 1.0f);
         normalized_raw[i] = invert_depth ? 1.0f - value : value;
     }
 
