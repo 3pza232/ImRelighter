@@ -209,6 +209,9 @@ std::string localizedStatus(const std::string& status) {
 }
 
 std::string localizedModelType(const std::string& type) {
+    if (type.empty() || type == "pending") {
+        return ui::tr("检查中…", "Checking…");
+    }
     if (type == "q4") {
         return ui::tr("Q4 · 4-bit 权重 · FP32 激活",
                       "Q4 · 4-bit weights · FP32 activations");
@@ -1955,6 +1958,9 @@ void AndroidApp::export_image(ViewMode mode) {
 }
 
 void AndroidApp::draw_settings(float s) {
+    if (catalog_) {
+        catalog_->poll_inspections();
+    }
     if (show_settings_ && !ImGui::IsPopupOpen("##settings", ImGuiPopupFlags_AnyPopupId)) {
         ImGui::OpenPopup("##settings");
     }

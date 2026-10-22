@@ -1,6 +1,7 @@
 #include "core/model_catalog.h"
 
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <sstream>
 
@@ -85,7 +86,7 @@ void addCustomModel(std::vector<ModelInfo>& models, AAssetManager* assets,
         "自定义 ONNX · 本地文件",
         absolute_path,
         displayPath(path),
-        ml::detectModelType(assets, absolute_path),
+        "pending",
         true,
     });
 }
@@ -140,6 +141,46 @@ bool ModelCatalog::available(const std::string& id) const {
     return model != nullptr && model->available;
 }
 
+void ModelCatalog::start_inspection(const std::string& id,
+                                    const std::string& path) {
+    if (id.empty() || inspections_.find(id) != inspections_.end()) {
+        return;
+    }
+    AAssetManager* assets = assets_;
+    try {
+        inspections_.emplace(
+            id, std::async(std::launch::async, [assets, path]() {
+                return ml::detectModelType(assets, path);
+            }));
+    } catch (const std::exception&) {
+        if (ModelInfo* model = const_cast<ModelInfo*>(find(id))) {
+            model->type = "unknown";
+        }
+    }
+}
+
+void ModelCatalog::poll_inspections() {
+    for (auto it = inspections_.begin(); it != inspections_.end();) {
+        if (it->second.wait_for(std::chrono::seconds(0)) !=
+            std::future_status::ready) {
+            ++it;
+            continue;
+        }
+        std::string type = "unknown";
+        try {
+            type = it->second.get();
+        } catch (const std::exception&) {
+        }
+        for (ModelInfo& model : models_) {
+            if (model.id == it->first) {
+                model.type = std::move(type);
+                break;
+            }
+        }
+        it = inspections_.erase(it);
+    }
+}
+
 std::string ModelCatalog::register_custom_model(
     const std::string& files_dir, const std::string& absolute_path) {
     if (!fileExists(absolute_path)) {
@@ -149,8 +190,9 @@ std::string ModelCatalog::register_custom_model(
     }
 
     addCustomModel(models_, assets_, absolute_path);
-    saveCustomModels(files_dir, models_);
     const std::string id = customId(absolute_path);
+    start_inspection(id, absolute_path);
+    saveCustomModels(files_dir, models_);
     __android_log_print(ANDROID_LOG_INFO, kTag,
                         "registered custom model: %s (%s)", absolute_path.c_str(),
                         displayName(std::filesystem::path(absolute_path)).c_str());
@@ -192,6 +234,7 @@ void ModelCatalog::load_custom_model(const std::string& files_dir) {
         }
         if (!path.empty() && fileExists(path)) {
             addCustomModel(models_, assets_, path);
+            start_inspection(customId(path), path);
         }
     }
     saveCustomModels(files_dir, models_);

@@ -238,6 +238,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 return
             }
             val treeUri = data?.data ?: return
+            val preferences = getSharedPreferences("imrelighter", MODE_PRIVATE)
+            val savedTree = preferences.getString("model_storage_tree_uri", null)
+            if (savedTree != null && sameTreeFolder(Uri.parse(savedTree), treeUri)) {
+                showTransientMessage(
+                    tr("该模型文件夹已导入，无需重复导入",
+                       "This model folder is already imported")
+                )
+                return
+            }
             try {
                 contentResolver.takePersistableUriPermission(
                     treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -751,6 +760,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
         }
         startActivityForResult(intent, REQUEST_PICK_MODEL)
+    }
+
+    private fun sameTreeFolder(first: Uri, second: Uri): Boolean {
+        return try {
+            first.authority == second.authority &&
+                DocumentsContract.getTreeDocumentId(first) ==
+                DocumentsContract.getTreeDocumentId(second)
+        } catch (error: Throwable) {
+            first == second
+        }
     }
 
     private fun initialModelPickerUri(): Uri? {

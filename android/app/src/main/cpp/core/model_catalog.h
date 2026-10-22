@@ -2,7 +2,9 @@
 
 #include <android/asset_manager.h>
 
+#include <future>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "core/types.h"
@@ -29,9 +31,16 @@ public:
     std::string load_selection(const std::string& files_dir) const;
     bool save_selection(const std::string& files_dir, const std::string& id) const;
 
+    // Polls asynchronous ONNX metadata inspection without blocking the render
+    // thread. Call once per frame while the model settings page is visible.
+    void poll_inspections();
+
 private:
+    void start_inspection(const std::string& id, const std::string& path);
+
     AAssetManager* assets_ = nullptr;
     std::vector<ModelInfo> models_;
+    std::unordered_map<std::string, std::future<std::string>> inspections_;
 };
 
 }  // namespace imrelighter

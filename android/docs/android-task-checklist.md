@@ -6,8 +6,8 @@ not lose requirements.
 ## Current build
 
 - Source: `android/`
-- APK: `android/dist/ImRelighterAndroid-model-detect.apk`
-- SHA-256: `6CDD8FC1AAFDD78CD6878F7DC42BD2D6F415B48098EDA6A8777F9DFB89C700D6`
+- APK: `android/dist/ImRelighterAndroid-import-stability.apk`
+- SHA-256: `397C0840DDCC5C39A108F4F25CA08D3FC21FB8D6BCC26691BC9F33AE3B45EB03`
 - Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleDebug --offline --no-daemon`
 
 ## Fixes in the current build
