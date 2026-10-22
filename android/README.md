@@ -47,6 +47,9 @@ Implemented:
 - GPU height/normal/shadow/lit caches are invalidated when switching tasks, so
   each task's depth, normals, view, lights and parameters remain isolated even
   though the same GL objects are reused.
+- Shadow controls include **显示阴影步进 / Show Shadow Steps**, which binds the
+  raw ray-march visibility maps instead of the edge-aware blurred maps. It is
+  off by default, per-task, and only changes the lighting sample source.
 - Model settings with **q4** as the bundled default, **恢复默认 Q4**, persisted
   selection, multiple custom ONNX models, and a bounded scrollable model list.
   Users choose a model storage folder via SAF; the app keeps read permission,

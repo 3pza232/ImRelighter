@@ -6,8 +6,8 @@ not lose requirements.
 ## Current build
 
 - Source: `android/`
-- APK: `android/dist/ImRelighterAndroid-import-stability2.apk`
-- SHA-256: `251AF5826836412633866F44BC271D875A3FCBBB69FFFD8B56348C5219BF0E65`
+- APK: `android/dist/ImRelighterAndroid-debug.apk`
+- SHA-256: `A54F1B94037F7E5579CBC09F5D4D79E9B623BAD1A92F9512AF667544DC2A3157`
 - Build: `$env:GRADLE_USER_HOME='D:\Android\.gradle'; .\gradlew.bat assembleDebug --offline --no-daemon`
 
 ## Fixes in the current build
@@ -37,6 +37,12 @@ not lose requirements.
 - Task activation invalidates the shared height/normal/shadow/lit GPU caches,
   so switching generated tasks cannot show another task's depth/height map.
   Per-task view, base mode, lights and parameters were runtime-verified.
+- Shadow settings include a per-task `显示阴影步进 / Show Shadow Steps` toggle.
+  It binds raw ray-march visibility maps (hard/stepped edges) instead of the
+  blurred maps; default off. Emulator-verified on/off visible difference.
+- Formal Android documentation added under `android/docs/` (overview,
+  architecture, build, usage, models, testing, packaging, limitations, ui-kit);
+  the old `android/docs/design/` folder was removed.
 
 ## User requirements
 

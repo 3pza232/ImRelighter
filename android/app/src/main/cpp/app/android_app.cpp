@@ -1885,6 +1885,8 @@ void AndroidApp::draw_lower_panel(float s) {
                             0.0001f, 0.2f, "%.4f", label_width);
         ui::formSliderFloat("##shadow_soft", ui::tr("阴影柔和", "Shadow Softness"), lighting_.shadow_softness,
                             0.0f, 0.5f, "%.3f", label_width);
+        ui::formCheckbox("##show_shadow_steps", ui::tr("显示阴影步进", "Show Shadow Steps"),
+                         lighting_.show_shadow_steps);
         ui::formSliderInt("##shadow_steps", ui::tr("阴影步数", "Shadow Steps"), lighting_.shadow_steps,
                           16, 192, label_width);
         ui::formSliderInt("##shadow_samples", ui::tr("采样数", "Samples"), lighting_.shadow_samples,
@@ -2908,9 +2910,11 @@ void AndroidApp::render_lighting(bool for_export) {
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, height_texture_);
     glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, blur_texture_[0]);
+    glBindTexture(GL_TEXTURE_2D, lighting_.show_shadow_steps ? shadow_texture_[0]
+                                                             : blur_texture_[0]);
     glActiveTexture(GL_TEXTURE4);
-    glBindTexture(GL_TEXTURE_2D, blur_texture_[1]);
+    glBindTexture(GL_TEXTURE_2D, lighting_.show_shadow_steps ? shadow_texture_[1]
+                                                             : blur_texture_[1]);
 
     glUniform1i(glGetUniformLocation(lit_program_, "uColor"), 0);
     glUniform1i(glGetUniformLocation(lit_program_, "uNormal"), 1);
