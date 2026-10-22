@@ -255,7 +255,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     }
                     runOnUiThread {
                         getSharedPreferences("imrelighter", MODE_PRIVATE).edit()
-                            .putString("model_storage_label", imported.first).apply()
+                            .putString("model_storage_label", imported.first)
+                            .putString("model_storage_tree_uri", treeUri.toString())
+                            .apply()
                         nativeSetModelStorage(imported.first)
                         nativeRegisterModelFiles(imported.second.toTypedArray())
                         showTransientMessage(
@@ -740,6 +742,19 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 Intent.EXTRA_MIME_TYPES,
                 arrayOf("application/octet-stream", "application/onnx", "*/*")
             )
+            val savedTree = getSharedPreferences("imrelighter", MODE_PRIVATE)
+                .getString("model_storage_tree_uri", null)
+            if (savedTree != null) {
+                try {
+                    val treeUri = Uri.parse(savedTree)
+                    val documentId = DocumentsContract.getTreeDocumentId(treeUri)
+                    val initialUri =
+                        DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+                    putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
+                } catch (error: Throwable) {
+                    Log.w(TAG, "could not use model storage as initial picker folder", error)
+                }
+            }
         }
         startActivityForResult(intent, REQUEST_PICK_MODEL)
     }
